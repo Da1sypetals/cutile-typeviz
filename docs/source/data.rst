@@ -76,14 +76,7 @@ A tile index ``(i, j, ...)`` with shape ``S`` refers to the elements of the arra
 ``(i+1)``-th, ``(j+1)``-th, ... tile.
 
 When accessing the elements of an array using tile indices, the multidimensional memory layout of the array is used.
-To access the tile space with a different memory layout, use the |order| parameter of load/store operations.
-
-Shapes & Orders
----------------
-
-.. autodata:: Shape
-
-.. autodata:: Order
+To access the tile space with a different memory layout, use the `order` parameter of load/store operations.
 
 Shape Broadcasting
 ------------------
@@ -105,23 +98,13 @@ Data Types
 .. autoclass:: cuda.tile.DType()
    :members:
 
-Numeric & Arithmetic Data Types
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. autoclass:: cuda.tile.NumericDType()
-   :members:
-   :show-inheritance:
-
-.. autoclass:: cuda.tile.ArithmeticDType()
-   :members:
-   :show-inheritance:
-
 .. include:: generated/includes/numeric_dtypes.rst
 
-.. autoclass:: cuda.tile.NumericDTypeCategories
-   :members:
-   :exclude-members: get_category
-   :class-doc-from: class
+Numeric & Arithmetic Data Types
+-------------------------------
+A *numeric* data type represents numbers. An *arithmetic* data type is a numeric data type
+that supports general arithmetic operations such as addition, subtraction, multiplication,
+and division.
 
 Arithmetic Promotion
 --------------------

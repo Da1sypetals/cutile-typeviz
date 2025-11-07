@@ -83,7 +83,6 @@ with open(os.path.join(os.path.dirname(__file__), 'references.rst'), 'r') as f:
 autodoc_type_aliases = {
     'Constant': 'Constant',
     'Shape': 'Shape',
-    'Order': 'Order',
 }
 
 

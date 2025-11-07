@@ -359,48 +359,7 @@ class Tile:
 
 
 Shape = Union[int, tuple[int, ...]]
-Shape.__doc__ = """The size of each dimension of a multidimensional space of either data (|array|,
-|tile|, etc) or execution (|grid|, etc).
-
-Examples:
-
-    >>> ct.load(a, index=0, shape=4) # 1D shapes.
-    >>> ct.load(a, index=(0, 0), shape=(4, 2)) # 2D shapes.
-    >>> ct.load(a, index=(0, 0, 0), shape=(4, 2, 6)) # 3D shapes.
-"""
-
-
 Order = Union[tuple[int, ...], Literal['C'], Literal['F']]
-Order.__doc__ = """The order in which the dimensions of a multidimensional space are linearly
-traversed.
-
-The order shall be specified as a tuple of integers, where each integer is the index of
-a dimension in the original array.
-The tuple of integers shall be a permutation of ``range(N)`` where ``N`` is the number of dimensions
-in the multidimensional space.
-No dimension shall be repeated or omitted.
-
-The multidimensional space shall be linearly traversed by:
-- Creating a multidimensional index representing the current position.
-- Starting with the last dimension specified by the order tuple,
-- Iteratively incrementing a single axis of the position from the start to the end of the dimension.
-- Repeating the previous step for the next dimension from last to first in the order tuple.
-
-``'C'`` is an alias for the tuple ``(0, 1, 2, ...)``.
-``'F'`` is an alias for the tuple ``(..., 2, 1, 0)``.
-
-Examples:
-
-    >>> # C/row-major order.
-    >>> ct.load(array, (0, 0), shape=(2, 4, 2), order='C')
-    >>> ct.load(array, (0, 0), shape=(2, 4, 2), order=(0, 1, 2)) # Equivalent to 'C'.
-    >>> # Fortran/column-major order
-    >>> ct.load(array, (0, 0), shape=(2, 4, 2), order='F')
-    >>> ct.load(array, (0, 0), shape=(2, 4, 2), order=(2, 1, 0)) # Equivalent to 'F'.
-    >>> # Transpose the last two axes
-    >>> ct.load(array, (0, 0), shape=(2, 4, 2), order=(0, 2, 1))
-"""
-
 
 TileOrScalar = Union[Tile, Scalar]
 
@@ -479,7 +438,7 @@ def num_tiles(array: Array, /,
     Args:
         array (ArrayLike): An array object on a cuda device
         axis (int): The axis of the tile partition space to get the dim size
-        shape (Shape): The |Shape| of the tile.
+        shape (Shape): The shape of the tile.
         order ("C" or "F", or tuple[int, ...]): Order of axis mapping. See :py:func:`load`.
 
     Examples:
@@ -507,9 +466,14 @@ def load(array: Array, /, index: Shape, shape: Constant[Shape], *,
     Args:
         array (Array): The |array| to load from.
         index (Shape): An index in the |tile space| of ``shape`` from ``array``.
-        shape (Shape): The |shape| of the tile.
-        order (Order, optional): The |order| in which the elements of ``array`` are copied to the
-            |tile|.
+        shape (Shape): The shape of the tile.
+        order: Permutation applied to array axes before the logical |tile space| is constructed.
+            Can be specified either as a tuple of integer constants, or as one of the two special
+            string literal values:
+
+            * "C" is an alias for ``(0, 1, 2, ...)``, i.e. no permutation applied;
+            * "F" is an alias for ``(..., 2, 1, 0)``, i.e. axis order is reversed.
+
             Default: "C".
         padding_mode (PaddingMode): The padding value to use when the index is out of bounds.
             Default: PaddingMode.UNDEFINED - padding behavior is undefined.
@@ -553,7 +517,7 @@ def store(array: Array, /, index: Shape, tile: TileOrScalar, order: Constant[Ord
         index (Shape): An index in the |tile space| of ``shape`` from ``array``.
         tile (TileOrScalar): The |tile| to store. The rank of the tile must match rank of the array,
             unless it is a scalar or 0d tile.
-        order (Order): The |order| in which the elements of ``array`` are copied to the |tile|.
+        order (Order): Order of axis mapping. See :py:func:`load`.
         latency (int, optional): A hint indicating how heavy DRAM traffic will be. It shall be an
             integer between 1 (low) and 10 (high).
             If it is None or not provided, the compiler will infer the latency.
@@ -875,7 +839,7 @@ def full(shape: Shape, fill_value: Scalar, dtype: DType) -> Tile:
     """Create a tile filled with const value
 
     Args:
-        shape (Shape):  The |shape| of the tile.
+        shape (Shape):  The shape of the tile.
         fill_value (Union[int, float, bool]): Constant value for the tile.
         dtype (DType): The |Data type| of the tile.
 
@@ -893,7 +857,7 @@ def ones(shape, dtype) -> Tile:
     """Create a tile filled with ones
 
     Args:
-        shape (Shape):  The |shape| of the tile.
+        shape (Shape):  The shape of the tile.
         dtype (DType): The |Data type| of the tile.
 
     Returns:
@@ -910,7 +874,7 @@ def zeros(shape, dtype) -> Tile:
     """Create a tile filled with zeros
 
     Args:
-        shape (Shape):  The |shape| of the tile.
+        shape (Shape):  The shape of the tile.
         dtype (DType): The |Data type| of the tile.
 
     Returns:
@@ -1764,7 +1728,7 @@ def extract(x, /, index, shape) -> Tile:
     Args:
         x (Tile): input tile
         index (Shape): An index in the sub |tile space|.
-        shape (Shape): The |shape| of the sub tile.
+        shape (Shape): The shape of the extracted tile.
 
     Returns:
         Tile:

@@ -91,16 +91,6 @@
 .. |arithmetic dtypes| replace:: :ref:`arithmetic dtypes <data:Numeric & Arithmetic Data Types>`
 .. |Arithmetic dtypes| replace:: :ref:`Arithmetic dtypes <data:Numeric & Arithmetic Data Types>`
 
-.. |shape| replace:: :ref:`shape <data:Shapes & Orders>`
-.. |Shape| replace:: :ref:`Shape <data:Shapes & Orders>`
-.. |shapes| replace:: :ref:`shapes <data:Shapes & Orders>`
-.. |Shapes| replace:: :ref:`Shapes <data:Shapes & Orders>`
-
-.. |order| replace:: :ref:`order <data:Shapes & Orders>`
-.. |Order| replace:: :ref:`Order <data:Shapes & Orders>`
-.. |orders| replace:: :ref:`orders <data:Shapes & Orders>`
-.. |Orders| replace:: :ref:`Orders <data:Shapes & Orders>`
-
 .. |tile space| replace:: :ref:`tile space <data:Element & Tile Space>`
 .. |Tile space| replace:: :ref:`Tile space <data:Element & Tile Space>`
 .. |tile spaces| replace:: :ref:`tile spaces <data:Element & Tile Space>`

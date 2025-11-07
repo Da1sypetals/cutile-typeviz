@@ -105,15 +105,7 @@ class TileValueError(TileError):
     pass
 
 
-class TileAliasError(TileError):
-    pass
-
-
 class TileInternalError(TileError):
-    pass
-
-
-class TileNotImplementedError(TileError):
     pass
 
 
