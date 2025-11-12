@@ -45,6 +45,7 @@ def launch_array_inc_1d(kernel, shape, tile):
 def launch_array_inc_1d_stream(kernel, shape, tile):
     x = make_tensor(shape, dtype=torch.float32, device="cuda")
     ref = x + 1
+    torch.cuda.synchronize()
     stream = torch.cuda.Stream()
     grid = (ceil(shape[0] / tile), 1, 1)
     ct.launch(stream, grid, kernel, (x, tile))
