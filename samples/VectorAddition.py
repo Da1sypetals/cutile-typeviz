@@ -280,8 +280,7 @@ if __name__ == "__main__":
         f"""cuTile Output 1D shape: {c_1d_cutile_direct.shape},
         dtype: {c_1d_cutile_direct.dtype}""")
     if args.correctness_check:
-        assert torch.allclose(c_1d_cutile_direct, a_1d_direct + b_1d_direct), \
-            "1D Direct Tiled Addition: Correctness check failed"
+        torch.testing.assert_close(c_1d_cutile_direct, a_1d_direct + b_1d_direct)
         print("Correctness check passed")
     else:
         print("Correctness check disabled")
@@ -301,8 +300,7 @@ if __name__ == "__main__":
         f"""cuTile Output 1D (gather) shape: {c_1d_cutile_gather.shape},
         dtype: {c_1d_cutile_gather.dtype}""")
     if args.correctness_check:
-        assert torch.allclose(c_1d_cutile_gather, a_1d_gather + b_1d_gather), \
-            "1D Gather Addition: Correctness check failed"
+        torch.testing.assert_close(c_1d_cutile_gather, a_1d_gather + b_1d_gather)
         print("Correctness check passed")
     else:
         print("Correctness check disabled")
@@ -319,8 +317,7 @@ if __name__ == "__main__":
         f"""cuTile Output 2D shape: {c_2d_cutile_direct.shape},
         dtype: {c_2d_cutile_direct.dtype}""")
     if args.correctness_check:
-        assert torch.allclose(c_2d_cutile_direct, a_2d_direct + b_2d_direct), \
-            "2D Direct Tiled Addition: Correctness check failed"
+        torch.testing.assert_close(c_2d_cutile_direct, a_2d_direct + b_2d_direct)
         print("Correctness check passed")
     else:
         print("Correctness check disabled")
@@ -340,8 +337,7 @@ if __name__ == "__main__":
         f"""cuTile Output 2D (gather) shape: {c_2d_cutile_gather.shape},
         dtype: {c_2d_cutile_gather.dtype}""")
     if args.correctness_check:
-        assert torch.allclose(c_2d_cutile_gather, a_2d_gather + b_2d_gather), \
-            "2D Gather Addition: Correctness check failed"
+        torch.testing.assert_close(c_2d_cutile_gather, a_2d_gather + b_2d_gather)
         print("Correctness check passed")
     else:
         print("Correctness check disabled")

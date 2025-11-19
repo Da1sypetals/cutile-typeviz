@@ -25,7 +25,7 @@ def inplace_kernel(
     ct.store(x, index=(bid,), tile=tx_updated)
 
 
-configs = [Config({'TILE_SIZE': 64}), Config({'TILE_SIZE': 128})]
+configs = [Config(TILE_SIZE=64), Config(TILE_SIZE=128)]
 
 
 @ct.kernel

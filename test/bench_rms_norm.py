@@ -156,10 +156,8 @@ def _static_persistent_autotune_configs():
     """Get autotune configurations for RMS Norm kernel"""
     configs = [
         Config(
-            {
-                'TILE_SIZE_M': ts_m,
-                'TILE_SIZE_N': ts_n,
-            },
+            TILE_SIZE_M=ts_m,
+            TILE_SIZE_N=ts_n,
             num_ctas=s,
             occupancy=w,
         )
@@ -185,9 +183,7 @@ def _standard_autotune_configs():
     """Get autotune configurations for RMS Norm kernel"""
     configs = [
         Config(
-            {
-                'TILE_SIZE': ts,
-            },
+            TILE_SIZE=ts,
             num_ctas=s,
             occupancy=w,
         )

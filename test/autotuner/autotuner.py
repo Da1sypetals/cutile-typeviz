@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 class Config:
     """One kernel variant: meta-params in kwargs (e.g., TILE)."""
-    def __init__(self, kwargs, *, num_ctas=None, occupancy=None, opt_level=3):
+    def __init__(self, *, num_ctas=None, occupancy=None, opt_level=3, **kwargs):
         self.kwargs = dict(kwargs)
         self.num_ctas = num_ctas
         self.occupancy = occupancy

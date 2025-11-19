@@ -225,8 +225,7 @@ if __name__ == "__main__":
         f"""\ncuTile FFT Output shape: {output_fft_cutile.shape},
         dtype: {output_fft_cutile.dtype}""")
     if args.correctness_check:
-        assert torch.allclose(output_fft_cutile, torch.fft.fft(input_data_complex, axis=-1)), \
-            "FFT: Correctness check failed"
+        torch.testing.assert_close(output_fft_cutile, torch.fft.fft(input_data_complex, axis=-1))
         print("Correctness check passed")
     else:
         print("Correctness check disabled")

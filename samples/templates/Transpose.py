@@ -100,8 +100,7 @@ if __name__ == "__main__":
     y_fp16_cutile = cutile_transpose(x_fp16)
     print(f"cuTile Output y shape: {y_fp16_cutile.shape}, dtype: {y_fp16_cutile.dtype}")
     if args.correctness_check:
-        assert torch.allclose(y_fp16_cutile, x_fp16.T), \
-            "Matrix Transposition with float16 (Half-Precision): Correctness check failed"
+        torch.testing.assert_close(y_fp16_cutile, x_fp16.T)
         print("Correctness check passed")
     else:
         print("Correctness check disabled")
@@ -116,8 +115,7 @@ if __name__ == "__main__":
     y_fp32_cutile = cutile_transpose(x_fp32)
     print(f"cuTile Output y shape: {y_fp32_cutile.shape}, dtype: {y_fp32_cutile.dtype}")
     if args.correctness_check:
-        assert torch.allclose(y_fp32_cutile, x_fp32.T), \
-            "Matrix Transposition with float32 (Single-Precision): Correctness check failed"
+        torch.testing.assert_close(y_fp32_cutile, x_fp32.T)
         print("Correctness check passed")
     else:
         print("Correctness check disabled")
@@ -134,9 +132,7 @@ if __name__ == "__main__":
     y_non_mult_cutile = cutile_transpose(x_non_mult)
     print(f"cuTile Output y shape: {y_non_mult_cutile.shape}, dtype: {y_non_mult_cutile.dtype}")
     if args.correctness_check:
-        assert torch.allclose(y_non_mult_cutile, x_non_mult.T), \
-            "Matrix Transposition with Non-Square, Non-Multiple Dimensions: " \
-            "Correctness check failed"
+        torch.testing.assert_close(y_non_mult_cutile, x_non_mult.T)
         print("Correctness check passed")
     else:
         print("Correctness check disabled")

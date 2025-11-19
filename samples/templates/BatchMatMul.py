@@ -97,8 +97,7 @@ if __name__ == "__main__":
             shape:{C_bmm_cutile_fp16.shape},
             dtype: {C_bmm_cutile_fp16.dtype}""")
     if args.correctness_check:
-        assert torch.allclose(C_bmm_cutile_fp16, A_fp16 @ B_fp16), \
-            "Standard BMM (float16): Correctness check failed"
+        torch.testing.assert_close(C_bmm_cutile_fp16, A_fp16 @ B_fp16)
         print("Correctness check passed")
     else:
         print("Correctness check disabled")
@@ -119,8 +118,7 @@ if __name__ == "__main__":
             shape:{C_bmm_cutile_fp32.shape},
             dtype: {C_bmm_cutile_fp32.dtype}""")
     if args.correctness_check:
-        assert torch.allclose(C_bmm_cutile_fp32, torch_batch_matmul_fp8(A_fp8, B_fp8)), \
-            "Standard BMM (float8_e4m3fn): Correctness check failed"
+        torch.testing.assert_close(C_bmm_cutile_fp32, torch_batch_matmul_fp8(A_fp8, B_fp8))
         print("Correctness check passed")
     else:
         print("Correctness check disabled")

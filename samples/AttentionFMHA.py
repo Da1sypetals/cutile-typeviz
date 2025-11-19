@@ -178,7 +178,7 @@ def cutile_fmha(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor,
 
     Batch, Heads, SeqLen_Q, D_k = Q.shape
     _, KV_Heads, SeqLen_KV, D_v = V.shape
-    enable_gqa = Heads != KV_Heads
+    even_k = (SeqLen_KV % tile_n) == 0
 
     if qk_scale is None:
         qk_scale = 1.0 / math.sqrt(D_k)
@@ -202,7 +202,7 @@ def cutile_fmha(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor,
         tile_n,
         query_group_size,
         causal,
-        enable_gqa
+        even_k
     ))
 
     return Out
@@ -211,18 +211,16 @@ def cutile_fmha(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor,
 # --- Wrapper function to launch the FMHA kernel with autotuning ---
 @autotune(
     search_space=[
-        Config(
-            {
-                'TILE_M': ts_m,
-                'TILE_N': ts_n,
-            },
-            num_ctas=s,
-            occupancy=o,
-        )
-        for ts_m in [128, 64, 32]
-        for ts_n in [128, 64, 32]
-        for s in [1, 2]
-        for o in [1, 2, 4, 8, 16, 32]
+        Config(TILE_M=256, TILE_N=128, num_ctas=1, occupancy=2),
+        Config(TILE_M=128, TILE_N=128, num_ctas=2, occupancy=2),
+        Config(TILE_M=128, TILE_N=128, num_ctas=1, occupancy=2),
+        Config(TILE_M=128, TILE_N=128, num_ctas=1, occupancy=1),
+        Config(TILE_M=64, TILE_N=64, num_ctas=1, occupancy=4),
+        Config(TILE_M=64, TILE_N=64, num_ctas=2, occupancy=1),
+        Config(TILE_M=64, TILE_N=32, num_ctas=1, occupancy=2),
+        Config(TILE_M=256, TILE_N=32, num_ctas=2, occupancy=2),
+        Config(TILE_M=32, TILE_N=32, num_ctas=1, occupancy=1),
+
     ]
 )
 def cutile_autotune_fmha(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor,
@@ -250,7 +248,6 @@ def cutile_autotune_fmha(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor,
     """
     Batch, Heads, SeqLen_Q, D_k = Q.shape
     _, KV_Heads, SeqLen_KV, D_v = V.shape
-    enable_gqa = Heads != KV_Heads
 
     # --- Create Output Tensor ---
     Out = torch.empty((Batch, Heads, SeqLen_Q, D_v), dtype=Q.dtype, device=Q.device)
@@ -263,9 +260,8 @@ def cutile_autotune_fmha(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor,
         args_fn=lambda TILE_M, TILE_N: (
             Q, K, V, Out,
             qk_scale, input_pos, D_k, Heads,
-            TILE_M, TILE_N, query_group_size, causal, enable_gqa,
+            TILE_M, TILE_N, query_group_size, causal, (SeqLen_KV % TILE_N) == 0
         ),
-        max_iter=20,
     )
 
     return Out, {
@@ -341,8 +337,7 @@ if __name__ == "__main__":
     if args.correctness_check:
         ref_fmha = torch_fmha(Q_input, K_input, V_input,
                               is_causal=False, enable_gqa=False)
-        assert torch.allclose(output_fmha_cutile_non_causal, ref_fmha, atol=1e-3), \
-            "Non-Causal Attention: Correctness check failed"
+        torch.testing.assert_close(output_fmha_cutile_non_causal, ref_fmha, atol=1e-3, rtol=1e-3)
         print("Correctness check passed")
     else:
         print("Correctness check disabled")
@@ -360,8 +355,7 @@ if __name__ == "__main__":
     if args.correctness_check:
         ref_fmha = torch_fmha(Q_input, K_input, V_input,
                               is_causal=True, enable_gqa=False)
-        assert torch.allclose(output_fmha_cutile_causal, ref_fmha, atol=1e-3), \
-            "Causal Attention: Correctness check failed"
+        torch.testing.assert_close(output_fmha_cutile_causal, ref_fmha, atol=1e-3, rtol=1e-3)
         print("Correctness check passed")
     else:
         print("Correctness check disabled")
@@ -397,8 +391,9 @@ if __name__ == "__main__":
     print(f"Tuned config: {tuned_config}")
     if args.correctness_check:
         ref_fmha = torch_fmha(Q_input, K_input, V_input, is_causal=True, enable_gqa=False)
-        assert torch.allclose(output_fmha_cutile_autotune_causal, ref_fmha, atol=1e-2, rtol=5e-2), \
-            "Causal Attention: Correctness check failed"
+        torch.testing.assert_close(
+            output_fmha_cutile_autotune_causal, ref_fmha, atol=1e-2, rtol=5e-2
+        )
         print("Correctness check passed")
     else:
         print("Correctness check disabled")
