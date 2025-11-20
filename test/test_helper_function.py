@@ -281,3 +281,36 @@ def test_helper_function_reassign_param():
     x = torch.zeros((1,), dtype=torch.int32, device="cuda")
     ct.launch(torch.cuda.current_stream(), (1,), call_helper_reassign_param, (x,))
     assert x.cpu().item() == 15
+
+
+@ct.function
+def helper_function_using_ct_api(x, output, B: ct.Constant[int], N: ct.Constant[int]):
+    px = ct.bid(0)
+    tile_x = ct.load(x, index=(px, 0), shape=(B, N))
+    ct.store(output, index=(px, 0), tile=tile_x + 1)
+
+
+def test_calling_function_from_host(shape, tile):
+    x = torch.rand(shape, dtype=torch.float32, device="cuda")
+    y = torch.zeros_like(x)
+    with pytest.raises(RuntimeError, match="Tile functions can only be called from tile code."):
+        helper_function_using_ct_api(x, y, tile, shape[1])
+
+
+@ct.kernel
+def kernel_calling_function_using_ct_api(x, output, B: ct.Constant[int], N: ct.Constant[int]):
+    helper_function_using_ct_api(x, output, B, N)
+
+
+def test_helper_function_using_ct_api(shape, tile):
+    x = torch.rand(shape, dtype=torch.float32, device="cuda")
+    y = torch.zeros_like(x)
+    grid = (ceil(shape[0] / tile), 1, 1)
+    ct.launch(
+        torch.cuda.current_stream(),
+        grid,
+        kernel_calling_function_using_ct_api,
+        (x, y, tile, shape[1])
+    )
+    ref_result = x + 1
+    assert_close(y, ref_result, atol=1e-4, rtol=1e-5)

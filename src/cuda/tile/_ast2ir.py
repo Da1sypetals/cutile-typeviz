@@ -18,6 +18,9 @@ from cuda.tile._ir.typing_support import get_constant_value
 def get_function_ir(pyfunc: Callable,
                     ir_ctx: ir.IRContext,
                     call_site: Optional[ir.Loc]) -> ir.Function:
+    # Get the original function from the decorated function if it exists.
+    pyfunc = getattr(pyfunc, "__wrapped__", pyfunc)
+
     source_lines, first_line = inspect.getsourcelines(pyfunc)
     # The source code of our function could be inside a class, an if-else block etc.
     # This means it can have extra indentation on the left. If we try to give it
