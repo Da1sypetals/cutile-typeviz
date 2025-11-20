@@ -23,7 +23,7 @@ class RoundingMode(Enum):
 
 
 class PaddingMode(Enum):
-    UNDEFINED = "undefined"
+    UNDETERMINED = "undetermined"
     ZERO = "zero"
     NEG_ZERO = "neg_zero"
     NAN = "nan"

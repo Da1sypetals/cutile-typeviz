@@ -225,7 +225,7 @@ class CompareOrdering(Enum):
 
 
 padding_mode_to_bytecode = {
-    PaddingMode.UNDEFINED: bc.PaddingValue.Missing,
+    PaddingMode.UNDETERMINED: bc.PaddingValue.Missing,
     PaddingMode.ZERO: bc.PaddingValue.Zero,
     PaddingMode.NEG_ZERO: bc.PaddingValue.NegZero,
     PaddingMode.NAN: bc.PaddingValue.Nan,

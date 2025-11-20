@@ -81,7 +81,7 @@ def tile_store_generate_bytecode(op: Union["TileStore", "TileStoreTokenOrdered"]
     tile_shape = tuple(x.value for x in tile_ty.shape)
 
     partition = ctx.make_partition_view(op.array, op.order, tile_shape,
-                                        padding_mode=PaddingMode.UNDEFINED)
+                                        padding_mode=PaddingMode.UNDETERMINED)
 
     return bc.encode_StoreViewTkoOp(
         ctx.builder,

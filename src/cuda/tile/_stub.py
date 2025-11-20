@@ -455,7 +455,7 @@ def num_tiles(array: Array, /,
 
 @function
 def load(array: Array, /, index: Shape, shape: Constant[Shape], *,
-         order: Constant[Order] = "C", padding_mode: PaddingMode = PaddingMode.UNDEFINED,
+         order: Constant[Order] = "C", padding_mode: PaddingMode = PaddingMode.UNDETERMINED,
          latency: Optional[int] = None, allow_tma: Optional[bool] = None) -> Tile:
     """Produces the |tile| at ``index`` in the |tile space| of ``shape`` from |array| ``array``.
 
@@ -475,8 +475,9 @@ def load(array: Array, /, index: Shape, shape: Constant[Shape], *,
             * "F" is an alias for ``(..., 2, 1, 0)``, i.e. axis order is reversed.
 
             Default: "C".
-        padding_mode (PaddingMode): The padding value to use when the index is out of bounds.
-            Default: PaddingMode.UNDEFINED - padding behavior is undefined.
+        padding_mode (PaddingMode): The value used to pad the tile when it extends beyond the array
+            boundaries. This occurs when the array dimensions are not divisible by the tile size.
+            Default: PaddingMode.UNDETERMINED - the padding value is undetermined.
         latency (int, optional): A hint indicating how heavy DRAM traffic will be. It shall be an
             integer between 1 (low) and 10 (high).
             If it is None or not provided, the compiler will infer the latency.

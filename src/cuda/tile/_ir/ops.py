@@ -2409,7 +2409,7 @@ class NumTiles(TypedOperation):
     @override
     def generate_bytecode(self, ctx: BytecodeContext):
         pv = ctx.make_partition_view(self.array, self.order, self.shape,
-                                     padding_mode=PaddingMode.UNDEFINED)
+                                     padding_mode=PaddingMode.UNDETERMINED)
         result_types = [ctx.type_table.tile(ctx.type_table.I32, ())] * len(self.shape)
         values = bc.encode_GetIndexSpaceShapeOp(ctx.builder, result_types, pv)
         return values[self.axis]

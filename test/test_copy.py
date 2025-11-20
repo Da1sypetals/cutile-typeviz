@@ -115,7 +115,7 @@ def make_array_copy_2d_with_padding_kernel(padding_mode: Optional[PaddingMode]):
 
 
 @pytest.mark.parametrize("padding_value, float_padding_value", [
-    (PaddingMode.UNDEFINED, None),
+    (PaddingMode.UNDETERMINED, None),
     (PaddingMode.ZERO, 0.0),
     (PaddingMode.NEG_ZERO, -0.0),
     (PaddingMode.NAN, float('nan')),
