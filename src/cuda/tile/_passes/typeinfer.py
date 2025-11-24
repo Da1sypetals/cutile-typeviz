@@ -6,6 +6,7 @@ import enum
 import inspect
 import sys
 from collections import defaultdict
+import dataclasses
 from dataclasses import dataclass
 from types import FunctionType
 from typing import Tuple, Any, Optional, Sequence, Callable
@@ -325,25 +326,43 @@ def infer_types_in_block(context: TypingContext, block: Block) -> None:
                 raise TileInternalError(str(e)) from e
 
 
-def infer_types_in_func(context: TypingContext, func: Function, args: Tuple[Argument, ...]) -> None:
+def infer_types_in_func(context: TypingContext,
+                        func: Function,
+                        args: Tuple[Argument, ...]) -> Function:
+    from cuda.tile._ir.ops import loosely_typed_const
+
     if len(args) != len(func.parameters):
         msg = f"Expected {len(func.parameters)} arguments, got {len(args)}"
         raise TileTypeError(msg, func.loc)
 
     # Initialize the typemap and const map with input args
-    for var, arg in zip(func.parameters, args):
-        var.set_type(arg.type)
-        var.set_loose_type(arg.loose_type)
-        if arg.is_const:
-            var.set_constant(arg.const_value)
+    mapper = ir.Mapper(context.ir_ctx, preserve_vars=True)
+    new_params = []
+    with ir.Builder(context.ir_ctx, func.loc) as ir_builder:
+        for var, arg in zip(func.parameters, args):
+            if arg.is_const:
+                unused_param = context.ir_ctx.make_var_like(var)
+                unused_param.set_type(arg.type)
+                new_params.append(unused_param)
 
+                with ir_builder.change_loc(var.loc):
+                    const_var = loosely_typed_const(arg.const_value)
+                mapper.set_var(const_var, var)
+                context.ir_ctx.copy_type_information(const_var, var)
+            else:
+                var.set_type(arg.type)
+                var.set_loose_type(arg.loose_type)
+                new_params.append(var)
+
+    func.root_block[:0] = [new_op.clone(mapper) for new_op in ir_builder.ops]
     infer_types_in_block(context, func.root_block)
+    return dataclasses.replace(func, parameters=tuple(new_params))
 
 
-def infer_types_pass(func: Function, args: Tuple[Argument, ...], pyfunc: FunctionType):
+def infer_types_pass(func: Function, args: Tuple[Argument, ...], pyfunc: FunctionType) -> Function:
     context = TypingContext(func.root_block.ctx)
     try:
-        infer_types_in_func(context, func, args)
+        return infer_types_in_func(context, func, args)
     except Exception as e:
         if 'CUTILEIR' in CUDA_TILE_LOGS:
             highlight_loc = e.loc if hasattr(e, 'loc') else None

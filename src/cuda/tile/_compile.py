@@ -66,7 +66,7 @@ def _get_final_ir(pyfunc, args) -> ir.Function:
     ir_ctx = ir.IRContext()
     func_ir: ir.Function = get_function_ir(pyfunc, ir_ctx, call_site=None)
     ir_args = func_ir.bind_arguments(args, get_constant_annotations(pyfunc))
-    infer_types_pass(func_ir, ir_args, pyfunc)
+    func_ir = infer_types_pass(func_ir, ir_args, pyfunc)
     dead_code_elimination_pass(func_ir)
 
     if not CUDA_TILE_TESTING_DISABLE_TOKEN_ORDER:

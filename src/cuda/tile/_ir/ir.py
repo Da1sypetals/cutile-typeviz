@@ -573,7 +573,7 @@ class Function:
         for param, arg_value in zip(self.parameters, args):
             const_val = None
             is_const = param.name in constant_args
-            ty = typeof_pyval(arg_value)
+            ty = typeof_pyval(arg_value, kernel_arg=not is_const)
             loose_type = ty
             if is_const:
                 try:

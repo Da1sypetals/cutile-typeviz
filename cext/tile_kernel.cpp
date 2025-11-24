@@ -744,12 +744,28 @@ static Status extract_array(PyObject* pyobj, LaunchHelper& helper) {
 
 
 static inline Status extract_py_long(PyObject* pyobj, bool is_constant, LaunchHelper& helper) {
-    int32_t value = pylong_as<int32_t>(pyobj);
-    if (PyErr_Occurred()) return ErrorRaised;
-    helper.cuargs.push_back({.i32 = value});
-    if (is_constant)
-        helper.constants.push_back(value);
-
+    if (is_constant) {
+        // Push a dummy value since it is not used.
+        // TODO: remove physical kernel args for constants.
+        helper.cuargs.push_back({.i32 = 0});
+        int overflow;
+        long long value = PyLong_AsLongLongAndOverflow(pyobj, &overflow);
+        if (PyErr_Occurred()) return ErrorRaised;
+        if (overflow) {
+            // TODO: support big values by extracting all digits
+            helper.constants.push_back(1);
+            unsigned long long uval = PyLong_AsUnsignedLongLong(pyobj);
+            if (PyErr_Occurred()) return ErrorRaised;
+            helper.constants.push_back(uval);
+        } else {
+            helper.constants.push_back(0);
+            helper.constants.push_back(value);
+        }
+    } else {
+        int32_t value = pylong_as<int32_t>(pyobj);
+        if (PyErr_Occurred()) return ErrorRaised;
+        helper.cuargs.push_back({.i32 = value});
+    }
     return OK;
 }
 

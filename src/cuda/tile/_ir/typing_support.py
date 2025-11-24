@@ -7,7 +7,7 @@ from enum import Enum
 from types import ModuleType, FunctionType
 from typing import Any, Callable, Mapping, Union
 from cuda.tile import _datatype as datatype
-from cuda.tile._exception import TileTypeError
+from cuda.tile._exception import TileTypeError, TileValueError
 from cuda.tile._cext import ArraySpecialization
 
 from .type import Type, SizeTy, TupleTy, DTypeConstructor, DTypeSpec, ListTy, NONE, StringTy, \
@@ -125,7 +125,7 @@ def is_supported_builtin_func(x: Any) -> bool:
     return _safe_get(BUILTIN_FUNCS, x) is not None
 
 
-def typeof_pyval(val) -> Type:
+def typeof_pyval(val, kernel_arg: bool = False) -> Type:
     if val is None:
         return NONE
     if (t := _safe_get(dtype_registry, type(val))):
@@ -133,13 +133,27 @@ def typeof_pyval(val) -> Type:
     if isinstance(val, bool):
         return datatype.bool_
     if isinstance(val, int):
-        return datatype.default_int_type
+        if kernel_arg:
+            # Non-constant integer kernel arguments are currently always treated as int32.
+            # Specializing the kernel dynamically based on the magnitude of an integer value
+            # could be confusing and surprising. Instead, we should consider adding
+            # an annotation-based mechanism for specifying parameter types.
+            return datatype.default_int_type
+        elif -2**31 <= val < 2**31:
+            return datatype.int32
+        elif -2**63 <= val < 2**63:
+            return datatype.int64
+        elif 0 <= val < 2**64:
+            return datatype.uint64
+        else:
+            # FIXME: delay the error and allow arbitrary-precision intermediate constant values
+            raise TileValueError(f"Constant {val} is out of range of any supported integer type")
     if isinstance(val, float):
         return datatype.default_float_type
     if isinstance(val, str):
         return StringTy(val)
     if isinstance(val, tuple):
-        return TupleTy(tuple(typeof_pyval(v) for v in val))
+        return TupleTy(tuple(typeof_pyval(v, kernel_arg) for v in val))
     if val is Ellipsis:
         return ELLIPSIS
     if isinstance(val, slice):
@@ -156,10 +170,10 @@ def typeof_pyval(val) -> Type:
         if len(val) == 0:
             raise TypeError('Empty lists are not yet supported.')
         first, *tail = val
-        item_ty = typeof_pyval(first)
+        item_ty = typeof_pyval(first, kernel_arg)
         if isinstance(item_ty, ArrayTy):
             for x in tail:
-                x_ty = typeof_pyval(x)
+                x_ty = typeof_pyval(x, kernel_arg)
                 if not isinstance(x_ty, ArrayTy):
                     raise TypeError("Expected all list items to be arrays")
                 new_item_ty = item_ty.unify(x_ty)
