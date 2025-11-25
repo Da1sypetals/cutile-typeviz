@@ -7,12 +7,42 @@ import torch
 import pytest
 
 from math import ceil
-import cuda.tile as ct
 from conftest import float_dtypes, bool_dtypes, int_dtypes, dtype_id
 from cuda.tile._ir.ops_utils import _is_implicit_cast_ok
 from cuda.tile._ir.typing_support import to_dtype
 from util import assert_close, assert_equal, filecheck, get_bytecode
 from torch.testing import make_tensor
+# example-begin
+import cuda.tile as ct
+
+TILE_SIZE = 16
+
+
+@ct.kernel
+def load_store_with_hints_kernel(x, y):
+    bid = ct.bid(0)
+    tx = ct.load(
+        x,
+        index=(bid,),
+        shape=(TILE_SIZE,),
+        latency=8,        # high-latency DRAM load
+    )
+    ct.store(
+        y,
+        index=(bid,),
+        tile=tx,
+        latency=2,        # cheaper write
+        allow_tma=False,  # disallow TMA
+    )
+# example-end
+
+
+def test_load_store_with_hints():
+    x = make_tensor((32,), dtype=torch.float16, device='cuda')
+    y = torch.zeros_like(x)
+    grid = (ceil(x.shape[0] / TILE_SIZE), 1, 1)
+    ct.launch(torch.cuda.current_stream(), grid, load_store_with_hints_kernel, (x, y))
+    assert_equal(y, x)
 
 
 def make_ct_matmul_kernel(latency: int | None, allow_tma: bool | None):

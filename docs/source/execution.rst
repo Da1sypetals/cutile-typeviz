@@ -69,6 +69,8 @@ Tile Functions
 
 .. autoclass:: cuda.tile.function
 
+.. _tile-kernels:
+
 Tile Kernels
 ------------
 

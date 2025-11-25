@@ -20,19 +20,31 @@ class ByTarget(Generic[T]):
     """
     Type used to specify a value that depends on the target GPU architecture.
 
-    Example:
+    Args:
+        default: The fallback value to use when the target GPU architecture is not explicitly
+            listed in ``value_by_target``.
+        value_by_target: Mapping from GPU architecture name to value. Keys must be strings of
+            the form ``"sm_<major><minor>"``, such as ``"sm_100"`` or ``"sm_120"``.
+
+    Examples
+    --------
+    Use one ``num_ctas`` value for all architectures:
 
     .. code-block:: python
 
         from cuda.tile import kernel, ByTarget
 
-        # Use one ``num_ctas`` value for all architectures:
         @kernel(num_ctas=8)
         def kernel_fn(x):
             ...
 
-        # Use different ``num_ctas`` values for two specific architectures
-        # "sm_100" and "sm_120", and the default value of 2 otherwise:
+    Use different ``num_ctas`` values for specific architectures, and a
+    fallback value for all others:
+
+    .. code-block:: python
+
+        from cuda.tile import kernel, ByTarget
+
         @kernel(num_ctas=ByTarget(sm_100=8, sm_120=4, default=2))
         def kernel_fn(x):
             ...
