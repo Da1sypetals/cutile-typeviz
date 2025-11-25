@@ -123,7 +123,8 @@ to a common dtype using the following process:
   *boolean*, *integral* or *floating-point*.
   The categories are ordered as follows: *boolean* < *integral* < *floating-point*.
 - If either operand is a |loosely typed numeric constant|, a concrete dtype is picked for it:
-  integral constants are treated as `int32`, and floating-point constants as treated as `float32`.
+  integral constants are treated as `int32`, `int64` or `uint64`, depending on the value;
+  floating-point constants as treated as `float32`.
 - If one of the two operands has a higher category than the other, then its concrete dtype
   is chosen as the common dtype.
 - If both operands are of the same category, but one of them is a |loosely typed numeric constant|,

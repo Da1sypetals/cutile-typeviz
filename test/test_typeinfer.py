@@ -8,8 +8,10 @@ import cuda.tile as ct
 import re
 
 from cuda.tile._compiler_options import CompilerOptions
-from cuda.tile._exception import TileTypeError
+from cuda.tile._exception import TileTypeError, TileValueError
 from cuda.tile._compile import compile_tile
+
+from util import raises_if
 
 
 def nd_tensor(nd: int, dtype=None):
@@ -317,3 +319,48 @@ def test_loop_type_mismatch(kernel):
     msg = re.escape('Type mismatch for loop variable `a`')
     with pytest.raises(TileTypeError, match=msg):
         compile(kernel, (x, ))
+
+
+@pytest.mark.parametrize("val, int32_raises, int64_raises, uint64_raises", [
+    (5, False, False, True),
+    (-2**31, False, False, True),
+    (-2**31-1, True, False, True),
+    (2**31, True, False, True),
+    (2**63, True, True, False),
+    ])
+def test_typeof_constant_int_arg(val, int32_raises, int64_raises, uint64_raises):
+    @ct.kernel
+    def kernel(n: ct.Constant[int], x):
+        t = n
+        # Using `t` as a loop variable materializes the constant's type
+        for i in range(2):
+            t += 1
+        # Attempt to store `t` in the arrays, possibly triggering an implicit cast error
+        ct.scatter(x, (), t)
+
+    def run(n, x_dtype, raises):
+        x = torch.zeros((), dtype=x_dtype, device="cuda")
+        with raises_if(raises, TileTypeError, match="cannot implicitly cast"):
+            ct.launch(torch.cuda.current_stream(), (1,), kernel, (n, x))
+            assert x.cpu().item() == n + 2
+
+    # Control: `t` is at least int32, so attempting it to store in an uint16 array is an error
+    run(val, torch.int16, True)
+
+    run(val, torch.int32, int32_raises)
+    run(val, torch.int64, int64_raises)
+    run(val, torch.uint64, uint64_raises)
+
+
+def test_typeof_constant_too_big():
+    @ct.kernel
+    def kernel(x):
+        t = 18446744073709551616   # 2**64
+        # Using `t` as a loop variable materializes the constant's type
+        for i in range(2):
+            t += 1
+        ct.scatter(x, (), t)
+
+    x = torch.zeros((), dtype=torch.uint64, device="cuda")
+    with pytest.raises(TileValueError, match="is out of range of any supported integer type"):
+        ct.launch(torch.cuda.current_stream(), (1,), kernel, (x,))
