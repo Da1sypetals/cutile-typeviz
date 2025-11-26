@@ -12,6 +12,7 @@ from util import assert_equal
 
 import autotuner.autotuner as autotuner_mod
 from autotuner.autotuner import Autotuner, Config, SearchSpace, autotune
+from cuda.tile._cext import default_tile_context
 
 
 @ct.kernel
@@ -238,6 +239,47 @@ def test_custom_transforms(monkeypatch):
         (x, tuned_result.TILE_SIZE)
     )
     assert len(launches) == num_launches + 1
+
+
+# ========== Test timeout / failed configs handling ==========#
+def test_autotune_handles_timeout_and_raises_when_all_configs_fail(monkeypatch, caplog):
+    old_timeout = default_tile_context.config.compiler_timeout_sec
+
+    tuner = autotuner_mod.Autotuner(configs)
+    x = torch.empty((256,), device="cuda")
+
+    def fake_time_ms(run_once, *, get_args, stream, warmup=2, rep=10):
+        if default_tile_context.config.compiler_timeout_sec <= 1:
+            raise RuntimeError("simulated compiler timeout")
+        return 1
+
+    monkeypatch.setattr(autotuner_mod, "_time_ms", fake_time_ms, raising=True)
+
+    # No timeout
+    with caplog.at_level("DEBUG"):
+        tuner(
+            stream=torch.cuda.current_stream(),
+            grid_fn=grid_fn,
+            kernel=dummy_kernel,
+            args_fn=lambda TILE_SIZE: (x, TILE_SIZE),
+        )
+    assert "failed to run" not in caplog.text
+
+    # Timeout
+    caplog.clear()
+    with caplog.at_level("DEBUG", logger=autotuner_mod.logger.name):
+        with pytest.raises(ValueError, match=r"No valid config"):
+            tuner(
+                stream=torch.cuda.current_stream(),
+                grid_fn=grid_fn,
+                kernel=dummy_kernel,
+                args_fn=lambda TILE_SIZE: (x, TILE_SIZE),
+                compiler_time_limit_sec=1,
+                force_retune=True,
+            )
+    assert "failed to run" in caplog.text
+    # Make sure the timeout is restored
+    assert default_tile_context.config.compiler_timeout_sec == old_timeout
 
 
 # ========== Real use case with decorator: test Inplace Plus One with clone policy ==========#

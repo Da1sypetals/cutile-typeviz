@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,6 +11,7 @@ import functools
 from typing import Callable, Sequence
 import cuda.tile as ct
 from cuda.tile._execution import TileDispatcher
+from cuda.tile._cext import default_tile_context
 import random
 import torch
 import inspect
@@ -194,6 +196,16 @@ def _safe_args_fn(args_fn: Callable, kwargs: dict[str, Any]) -> tuple[Any, ...]:
         )
 
 
+@contextmanager
+def compiler_timeout(timeout_sec: int):
+    old_timeout = default_tile_context.config.compiler_timeout_sec
+    default_tile_context.config.compiler_timeout_sec = timeout_sec
+    try:
+        yield
+    finally:
+        default_tile_context.config.compiler_timeout_sec = old_timeout
+
+
 class Autotuner:
     def __init__(self, search_space: SearchSpace | Sequence[Config]):
         self._search_space = _normalize_search_space(search_space)
@@ -212,7 +224,7 @@ class Autotuner:
                  *,
                  key_fn=_default_key,
                  max_iter: int = 60,
-                 time_limit_ms: int = 30_000,
+                 compiler_time_limit_sec: int = 10,
                  seed: int | None = None,
                  force_retune: bool = False) -> TunedResult:
         """
@@ -229,8 +241,7 @@ class Autotuner:
             transforms: The transforms functions for runtime arguments if needed.
             key_fn: The key function.
             max_iter: The maximum number of valid condigurations to sample from the search space.
-            time_limit_ms: The time limit for each kernel run (including compilation)
-                           in milliseconds. Default is 30000ms (30s).
+            compiler_time_limit_sec: The compilation time limit for each kernel.
             seed: The seed for the random number generator. Default is None.
             force_retune: Force retuning even if the config is found in the cache. Default is False.
         """
@@ -266,11 +277,12 @@ class Autotuner:
                     ct.launch(stream, grid, updated_kernel, args)
 
                 try:
-                    time_ms = _time_ms(
-                        run_once,
-                        get_args=lambda: _make_trial_args(args_fn, cfg.kwargs, kernel, transforms)[1], # noqa
-                        stream=stream,
-                    )
+                    with compiler_timeout(compiler_time_limit_sec):
+                        time_ms = _time_ms(
+                            run_once,
+                            get_args=lambda: _make_trial_args(args_fn, cfg.kwargs, kernel, transforms)[1], # noqa
+                            stream=stream,
+                        )
                 except Exception as e:
                     logger.debug(f"{cfg} failed to run: {e}")
                     continue
