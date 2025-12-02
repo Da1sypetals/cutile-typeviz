@@ -22,6 +22,18 @@ def mul_add_kernel(x, y, z, output,
     ct.store(output, index=(bidx, 0), tile=output_tile)
 
 
+def mul_add_kernel_local_var(x, y, z, output,
+                             TILE: ct.Constant[int],
+                             DIM: ct.Constant[int]):
+    bidx = ct.bid(0)
+    tx = ct.load(x, index=(bidx, 0), shape=(TILE, DIM))
+    ty = ct.load(y, index=(bidx, 0), shape=(TILE, DIM))
+    tz = ct.load(z, index=(bidx, 0), shape=(TILE, DIM))
+    tmp = tx * ty
+    output_tile = tmp + tz
+    ct.store(output, index=(bidx, 0), tile=output_tile)
+
+
 def mul_sub_kernel(x, y, z, output,
                    TILE: ct.Constant[int],
                    DIM: ct.Constant[int]):
@@ -48,6 +60,7 @@ def add_mul_kernel(x, y, z, output,
 @pytest.mark.parametrize(
     "kernel, kernel_ref",
     [
+        pytest.param(mul_add_kernel_local_var, lambda x, y, z: x * y + z),
         pytest.param(mul_add_kernel, lambda x, y, z: x * y + z),
         pytest.param(mul_sub_kernel, lambda x, y, z: x * y - z),
         pytest.param(add_mul_kernel, lambda x, y, z: z + x * y),

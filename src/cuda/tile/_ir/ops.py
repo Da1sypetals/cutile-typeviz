@@ -191,13 +191,14 @@ class Loop(Operation):
 
         if self.for_loop is not None:
             new_induction_var = mapper.clone_var(self.for_loop.induction_var)
-            new_for_loop = ForLoopInfo(new_induction_var, self.for_loop.iterable)
+            iterable = mapper.get_var(self.for_loop.iterable)
+            new_for_loop = ForLoopInfo(new_induction_var, iterable)
         else:
             new_for_loop = None
 
         res = self._clone_impl(mapper, [] if new_carried_vars is None else new_carried_vars.results)
         res.for_loop = new_for_loop
-        res.new_cattied_vars = new_carried_vars
+        res.carried_vars = new_carried_vars
         return res
 
     def infer_type(self, typing_context: TypingContext) -> TypeResult:

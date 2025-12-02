@@ -30,6 +30,7 @@ from cuda.tile._exception import (
 )
 from cuda.tile._ir import ir
 from cuda.tile._passes.code_motion import hoist_loop_invariants
+from cuda.tile._passes.eliminate_assign_ops import eliminate_assign_ops
 from cuda.tile._passes.loop_split import split_loops
 from cuda.tile._passes.rewrite_patterns import rewrite_patterns
 from cuda.tile._debug import (
@@ -75,6 +76,7 @@ def _get_final_ir(pyfunc, args, tile_context) -> ir.Function:
     func_ir: ir.Function = get_function_ir(pyfunc, ir_ctx, call_site=None)
     ir_args = func_ir.bind_arguments(args, get_constant_annotations(pyfunc))
     func_ir = infer_types_pass(func_ir, ir_args, pyfunc, tile_context)
+    eliminate_assign_ops(func_ir)
     dead_code_elimination_pass(func_ir)
 
     if not CUDA_TILE_TESTING_DISABLE_TOKEN_ORDER:

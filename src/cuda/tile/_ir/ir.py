@@ -309,6 +309,7 @@ class Operation:
         ret.attributes = dict(ret.attributes)
         ret.result_vars = result_vars
         ret.parent_block = None
+        ret.nested_blocks = new_nested_blocks
         return ret
 
     @property
