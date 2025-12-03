@@ -45,6 +45,7 @@ Proceed to the :ref:`quickstart` page for installation instructions and a comple
    :maxdepth: 2
    :hidden:
 
+   release_notes
    quickstart
    execution
    data
