@@ -143,6 +143,10 @@ connection.languages.inlayHint.on((params: InlayHintParams): InlayHint[] => {
 });
 
 // 监听文档变化，触发 Inlay Hint 刷新
+documents.onDidSave(change => {
+    // 当文档内容变化时，通知客户端刷新 Inlay Hint
+    connection.languages.inlayHint.refresh();
+});
 documents.onDidChangeContent(change => {
     // 当文档内容变化时，通知客户端刷新 Inlay Hint
     connection.languages.inlayHint.refresh();
