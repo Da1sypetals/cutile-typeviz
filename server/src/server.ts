@@ -12,6 +12,8 @@ import {
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
+import { execSync } from 'child_process';
+import * as path from 'path';
 
 // 创建连接
 const connection = createConnection(ProposedFeatures.all);
@@ -19,9 +21,71 @@ const connection = createConnection(ProposedFeatures.all);
 // 创建文档管理器
 const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 
+// Python 脚本路径
+const PYTHON_SCRIPT_PATH = path.join(__dirname, '..', 'src', 'char_counter.py');
+
+/**
+ * Python 脚本输出的结果类型
+ */
+interface PythonResult {
+    source: string;
+    version: string;
+    results: Array<{
+        line: number;
+        maxCount: number;
+        marker: string;
+    }>;
+}
+
+/**
+ * 调用 Python 脚本计算每行的最大字符出现次数
+ * 如果 Python 执行失败，直接抛出错误崩溃
+ * 
+ * @param text 要分析的文本内容
+ * @returns Python 脚本输出的 JSON 结果
+ */
+function callPythonCharCounter(text: string): PythonResult {
+    try {
+        // 使用 execSync 同步调用 Python 脚本
+        // 通过 stdin 传入文本内容
+        const result = execSync(`python3 "${PYTHON_SCRIPT_PATH}"`, {
+            input: text,
+            encoding: 'utf-8',
+            maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+            timeout: 30000 // 30秒超时
+        });
+
+        // 解析 JSON 输出
+        const jsonResult: PythonResult = JSON.parse(result);
+
+        // 验证结果来源
+        if (jsonResult.source !== 'python') {
+            throw new Error('Invalid result source: expected "python"');
+        }
+
+        return jsonResult;
+    } catch (error: any) {
+        // Python 执行失败，直接崩溃
+        const errorMessage = `Python script execution failed: ${error.message}`;
+        console.error(errorMessage);
+
+        // 输出详细错误信息
+        if (error.stderr) {
+            console.error('Python stderr:', error.stderr.toString());
+        }
+        if (error.stdout) {
+            console.error('Python stdout:', error.stdout.toString());
+        }
+
+        // 直接抛出错误，不进行 fallback
+        throw new Error(errorMessage);
+    }
+}
+
 // 初始化处理
 connection.onInitialize((params: InitializeParams): InitializeResult => {
     console.log('LSP Server 初始化中...');
+    console.log('Python 脚本路径:', PYTHON_SCRIPT_PATH);
 
     return {
         capabilities: {
@@ -38,37 +102,6 @@ connection.onInitialized(() => {
     console.log('LSP Server 初始化完成');
 });
 
-/**
- * 计算字符串中出现最多的字符的个数
- * @param line 输入的字符串行
- * @returns 出现最多的字符的个数
- */
-function getMaxCharCount(line: string): number {
-    if (line.length === 0) {
-        return 0;
-    }
-
-    // 使用 Map 统计每个字符出现的次数
-    const charCount = new Map<string, number>();
-
-    for (const char of line) {
-        // 忽略空白字符（可选，根据需求调整）
-        // if (char === ' ' || char === '\t') continue;
-
-        charCount.set(char, (charCount.get(char) || 0) + 1);
-    }
-
-    // 找出最大值
-    let maxCount = 0;
-    for (const count of charCount.values()) {
-        if (count > maxCount) {
-            maxCount = count;
-        }
-    }
-
-    return maxCount;
-}
-
 // Inlay Hint 请求处理
 connection.languages.inlayHint.on((params: InlayHintParams): InlayHint[] => {
     const document = documents.get(params.textDocument.uri);
@@ -76,33 +109,34 @@ connection.languages.inlayHint.on((params: InlayHintParams): InlayHint[] => {
         return [];
     }
 
-    const hints: InlayHint[] = [];
     const text = document.getText();
-    const lines = text.split('\n');
+
+    // 调用 Python 脚本获取计算结果
+    // 如果失败会直接抛出错误崩溃
+    const pythonResult = callPythonCharCounter(text);
+
+    console.log(`Python 计算完成 (source: ${pythonResult.source}, version: ${pythonResult.version})`);
+
+    const hints: InlayHint[] = [];
 
     // 获取请求的范围
     const startLine = params.range.start.line;
     const endLine = params.range.end.line;
 
-    // 遍历每一行
-    for (let lineIndex = startLine; lineIndex <= endLine && lineIndex < lines.length; lineIndex++) {
-        const line = lines[lineIndex];
-
-        // 跳过空行
-        if (line.trim().length === 0) {
+    // 遍历 Python 返回的结果
+    for (const item of pythonResult.results) {
+        // 只处理请求范围内的行
+        if (item.line < startLine || item.line > endLine) {
             continue;
         }
 
-        // 计算该行出现最多的字符的个数
-        const maxCount = getMaxCharCount(line);
-
-        // 创建 Inlay Hint
+        // 创建 Inlay Hint，使用 Python 返回的 marker 来区分
         const hint: InlayHint = {
             // 位置：行首
-            position: Position.create(lineIndex, 0),
-            // 显示内容：出现最多的字符的个数
-            label: `[${maxCount}] `,
-            // 类型：设置为 Type 类型（也可以用 Parameter）
+            position: Position.create(item.line, 0),
+            // 显示内容：使用 Python 的 marker + 最大字符数
+            label: `${item.marker}[${item.maxCount}] `,
+            // 类型：设置为 Type 类型
             kind: InlayHintKind.Type,
             // 设置为在左侧显示（paddingRight 在右侧添加间距）
             paddingRight: true
@@ -126,4 +160,4 @@ documents.listen(connection);
 // 启动连接监听
 connection.listen();
 
-console.log('Char Count LSP Server 已启动');
+console.log('Char Count LSP Server 已启动 (Python backend)');
