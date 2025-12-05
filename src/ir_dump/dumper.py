@@ -252,3 +252,59 @@ class CutileIrDump:
         """
         self.compiler_options = CompilerOptions(**options)
         return self
+
+    def get_function_repr(
+        self,
+        kernel_func,
+        args: List[Any],
+    ) -> str:
+        from cuda.tile._ast2ir import get_function_ir
+        from cuda.tile._const_utils import get_constant_annotations
+        from cuda.tile._passes.typeinfer import infer_types_pass
+
+        # 获取原始 Python 函数
+        pyfunc = kernel_func._pyfunc
+
+        # 创建 IR 上下文并获取函数 IR
+        ir_ctx = ir.IRContext()
+        func_ir = get_function_ir(pyfunc, ir_ctx, call_site=None)
+
+        # 绑定参数
+        ir_args = func_ir.bind_arguments(args, get_constant_annotations(pyfunc))
+
+        # 执行类型推断 pass
+        func_ir = infer_types_pass(func_ir, ir_args, pyfunc, default_tile_context)
+
+        return func_ir
+
+    def dump_typechecked_ir(
+        self,
+        kernel_func,
+        args: List[Any],
+        constants: Optional[Dict[str, Any]] = None,
+        output_file: Optional[str] = None,
+    ) -> str:
+        """
+        编译 kernel 并输出 infer_types_pass 后的 IR（类型检查后的 IR）
+
+        Args:
+            kernel_func: 使用 @ct.kernel 装饰的 kernel 函数
+            args: kernel 参数列表（可以是 MockTensor 或真实 tensor）
+            constants: 常量参数字典，如 {"hidden_size": 64, "br": 32}
+            output_file: 可选的输出文件路径，如果提供则写入文件
+
+        Returns:
+            类型检查后的 IR 字符串
+        """
+        func_ir = self.get_function_repr(kernel_func, args, constants)
+
+        # 生成 IR 字符串
+        ir_string = func_ir.to_string(include_loc=False)
+
+        # 如果提供了输出文件路径，则写入文件
+        if output_file is not None:
+            output_path = os.path.join(self.output_dir, output_file)
+            with open(output_path, "w") as f:
+                f.write(ir_string)
+
+        return ir_string
