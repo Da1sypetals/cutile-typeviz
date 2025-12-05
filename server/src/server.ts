@@ -22,7 +22,7 @@ const connection = createConnection(ProposedFeatures.all);
 // 创建文档管理器
 const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 
-const CUTILE_SRC_PATH = "/root/dev/cutile-python/src";
+const CUTILE_SRC_PATH = "/Users/daisy/develop/cutile-python/src";
 
 /**
  * Python 脚本输出的结果类型
