@@ -2,6 +2,7 @@ import cuda.tile as ct
 from ir_dump import CutileIrDump
 from cuda.tile._ir.ir import Function, Block, Operation
 from cuda.tile._ir.ops import IfElse, Loop
+from cuda.tile._ir.ops import Assign
 from copy import deepcopy
 from icecream import ic
 
@@ -103,8 +104,13 @@ def main():
     print(f"  - hidden_size: {hidden_size}")
     print(f"  - block size: Br={Br}, Bc={Bc}")
 
-    # 测试 dump_typechecked_ir
-    print("\n正在生成 type-checked IR...")
+    dumper.dump_typechecked_ir(
+        flash_attention_forward_v2,
+        [q, k, v, out, hidden_size, Br, Bc],
+        output_file="flash_attention_typechecked.cutileir",
+    )
+
+    # Manipulate function
     func_repr = dumper.get_function_repr(
         kernel_func=flash_attention_forward_v2,
         args=[q, k, v, out, hidden_size, Br, Bc],
@@ -114,7 +120,11 @@ def main():
     flattened_ops = flatten_func(func_repr)
     ic(len(flattened_ops))
 
-    print("Func repr get")
+    for op in flattened_ops:
+        if isinstance(op, Assign):
+            # ic(op)
+            if not str(op.result_var).startswith("$"):
+                print(f"{op.loc} | {op}")
 
 
 if __name__ == "__main__":
