@@ -14,6 +14,7 @@ import {
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { execSync } from 'child_process';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 
 // 创建连接
 const connection = createConnection(ProposedFeatures.all);
@@ -21,10 +22,7 @@ const connection = createConnection(ProposedFeatures.all);
 // 创建文档管理器
 const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 
-// Python 脚本路径
-// const PYTHON_SCRIPT_PATH = path.join(__dirname, '..', 'src', 'char_counter.py');
-const PYTHON_SCRIPT_PATH = "/root/dev/cutile-python/src/lsp_interface.py";
-
+const CUTILE_SRC_PATH = "/root/dev/cutile-python/src";
 
 /**
  * Python 脚本输出的结果类型
@@ -41,17 +39,18 @@ interface Hint {
  * 如果 Python 执行失败，直接抛出错误崩溃
  * 
  * @param text 要分析的文本内容
+ * @param scriptPath 要运行的 Python 脚本路径（正在监控的文件）
  * @returns Python 脚本输出的 JSON 结果
  */
-function callPythonCharCounter(text: string): Array<Hint> {
+function callPythonCharCounter(text: string, scriptPath: string): Array<Hint> {
     try {
-        // 使用 execSync 同步调用 Python 脚本
+        // 使用 execSync 同步调用正在监控的 Python 文件
         // 通过 stdin 传入文本内容
-        const result = execSync(`PYTHONPATH=/root/dev/cutile-python/src python3 "${PYTHON_SCRIPT_PATH}"`, {
+        const result = execSync(`PYTHONPATH=${CUTILE_SRC_PATH} python3 "${scriptPath}"`, {
             input: text,
             encoding: 'utf-8',
             maxBuffer: 10 * 1024 * 1024, // 10MB buffer
-            timeout: 99999999999
+            timeout: 30000 // 30 seconds
         });
 
         // 解析 JSON 输出
@@ -79,7 +78,6 @@ function callPythonCharCounter(text: string): Array<Hint> {
 // 初始化处理
 connection.onInitialize((params: InitializeParams): InitializeResult => {
     console.log('LSP Server 初始化中...');
-    console.log('Python 脚本路径:', PYTHON_SCRIPT_PATH);
 
     return {
         capabilities: {
@@ -105,9 +103,12 @@ connection.languages.inlayHint.on((params: InlayHintParams): InlayHint[] => {
 
     const text = document.getText();
 
-    // 调用 Python 脚本获取计算结果
+    // 将 URI 转换为文件路径（这就是正在监控的文件）
+    const filePath = fileURLToPath(params.textDocument.uri);
+
+    // 调用正在监控的文件作为 Python 脚本运行
     // 如果失败会直接抛出错误崩溃
-    const pythonResult = callPythonCharCounter(text);
+    const pythonResult = callPythonCharCounter(text, filePath);
 
 
     const hints: InlayHint[] = [];
