@@ -19,6 +19,7 @@ def flash_attention_forward_v2(
 ):
     ib = ct.bid(0)
     ih = ct.bid(1)
+    z = ih * ct.float64(244.1)
     Tc = k.shape[0] // bc
     qi = ct.load(q, index=(ib, ih, ct.bid(2), 0), shape=(1, 1, br, hidden_size))
 
@@ -69,7 +70,7 @@ def flatten_operations(operations: list[Operation]) -> list[Operation]:
     return flattened
 
 
-def flatten_func(func: Function) -> list[Operation]:
+def list_all_operations(func: Function) -> list[Operation]:
     operations = func.root_block._operations
     return flatten_operations(operations)
 
@@ -117,14 +118,14 @@ def main():
     )
     ic(func_repr)
 
-    flattened_ops = flatten_func(func_repr)
+    flattened_ops = list_all_operations(func_repr)
     ic(len(flattened_ops))
 
     for op in flattened_ops:
         if isinstance(op, Assign):
             # ic(op)
             if not str(op.result_var).startswith("$"):
-                print(f"{op.loc} | {op}")
+                print(f"{op.loc}--{op.loc.end_col} | {op}")
 
 
 if __name__ == "__main__":
