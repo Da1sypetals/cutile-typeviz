@@ -37,15 +37,15 @@ export function activate(context: ExtensionContext) {
         documentSelector: [{ scheme: 'file', language: '*' }],
         synchronize: {
             // 监听工作区配置变化
-            configurationSection: 'charCountLsp',
+            configurationSection: 'cuTileTypeviz',
             fileEvents: workspace.createFileSystemWatcher('**/*.*')
         }
     };
 
     // 创建语言客户端
     client = new LanguageClient(
-        'charCountLsp',
-        'Char Count LSP',
+        'cuTileTypeviz',
+        'cuTile typeviz',
         serverOptions,
         clientOptions
     );
@@ -53,7 +53,7 @@ export function activate(context: ExtensionContext) {
     // 启动客户端，同时启动服务器
     client.start();
 
-    console.log('Char Count LSP 扩展已激活');
+    console.log('cuTile typeviz 扩展已激活');
 }
 
 export function deactivate(): Thenable<void> | undefined {

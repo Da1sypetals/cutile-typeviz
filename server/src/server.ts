@@ -42,7 +42,7 @@ interface Hint {
  * @param scriptPath 要运行的 Python 脚本路径（正在监控的文件）
  * @returns Python 脚本输出的 JSON 结果
  */
-function callPythonCharCounter(text: string, scriptPath: string): Array<Hint> {
+function callPythonCutileTypecheck(text: string, scriptPath: string): Array<Hint> {
     try {
         // 使用 execSync 同步调用正在监控的 Python 文件
         // 通过 stdin 传入文本内容
@@ -108,7 +108,7 @@ connection.languages.inlayHint.on((params: InlayHintParams): InlayHint[] => {
 
     // 调用正在监控的文件作为 Python 脚本运行
     // 如果失败会直接抛出错误崩溃
-    const pythonResult = callPythonCharCounter(text, filePath);
+    const pythonResult = callPythonCutileTypecheck(text, filePath);
 
 
     const hints: InlayHint[] = [];
@@ -154,4 +154,4 @@ documents.listen(connection);
 // 启动连接监听
 connection.listen();
 
-console.log('Char Count LSP Server 已启动 (Python backend)');
+console.log('cuTile typeviz Server 已启动 (Python backend)');

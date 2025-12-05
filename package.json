@@ -1,6 +1,6 @@
 {
-    "name": "char-count-lsp",
-    "displayName": "Char Count LSP",
+    "name": "cutile-typeviz",
+    "displayName": "cuTile typeviz",
     "description": "在每行行首显示该行中出现最多的字符的个数",
     "version": "1.0.0",
     "publisher": "demo",
@@ -18,12 +18,12 @@
     "contributes": {
         "configuration": {
             "type": "object",
-            "title": "Char Count LSP",
+            "title": "cuTile typeviz",
             "properties": {
-                "charCountLsp.enable": {
+                "cuTileTypeviz.enable": {
                     "type": "boolean",
                     "default": true,
-                    "description": "启用/禁用 Char Count LSP"
+                    "description": "启用/禁用 cuTile typeviz"
                 }
             }
         }

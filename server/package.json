@@ -1,7 +1,7 @@
 {
-    "name": "char-count-lsp-server",
+    "name": "cutile-typeviz-server",
     "version": "1.0.0",
-    "description": "LSP Server for char count inlay hints",
+    "description": "LSP Server for cuTile typeviz",
     "main": "out/server.js",
     "scripts": {
         "compile": "tsc -b",
