@@ -1,0 +1,46 @@
+{
+    "name": "char-count-lsp",
+    "displayName": "Char Count LSP",
+    "description": "在每行行首显示该行中出现最多的字符的个数",
+    "version": "1.0.0",
+    "publisher": "demo",
+    "engines": {
+        "vscode": "^1.75.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onLanguage:plaintext",
+        "onLanguage:*"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "configuration": {
+            "type": "object",
+            "title": "Char Count LSP",
+            "properties": {
+                "charCountLsp.enable": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "启用/禁用 Char Count LSP"
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -b",
+        "watch": "tsc -b -w",
+        "lint": "eslint ./src --ext .ts,.tsx",
+        "postinstall": "cd server && npm install && cd .."
+    },
+    "devDependencies": {
+        "@types/node": "^18.0.0",
+        "@types/vscode": "^1.75.0",
+        "typescript": "^5.0.0"
+    },
+    "dependencies": {
+        "vscode-languageclient": "^9.0.1"
+    }
+}
