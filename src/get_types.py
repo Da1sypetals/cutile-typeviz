@@ -1,5 +1,9 @@
 import cuda.tile as ct
 from ir_dump import CutileIrDump
+from cuda.tile._ir.ir import Function, Block, Operation
+from cuda.tile._ir.ops import IfElse, Loop
+from copy import deepcopy
+from icecream import ic
 
 
 @ct.kernel
@@ -45,6 +49,30 @@ def flash_attention_forward_v2(
     ct.store(out, index=(ib, ih, ct.bid(2), 0), tile=oi)
 
 
+def flatten_operations(operations: list[Operation]) -> list[Operation]:
+    flattened = []
+    for i in range(len(operations)):
+        op = operations[i]
+        if isinstance(op, Loop):
+            body = flatten_operations(op.body._operations)
+            flattened.extend(body)
+
+        elif isinstance(op, IfElse):
+            then_block = flatten_operations(op.then_block._operations)
+            else_block = flatten_operations(op.else_block._operations)
+            flattened.extend(then_block)
+            flattened.extend(else_block)
+
+        else:
+            flattened.append(op)
+    return flattened
+
+
+def flatten_func(func: Function) -> list[Operation]:
+    operations = func.root_block._operations
+    return flatten_operations(operations)
+
+
 def main():
     """主函数"""
     print("=" * 60)
@@ -77,10 +105,16 @@ def main():
 
     # 测试 dump_typechecked_ir
     print("\n正在生成 type-checked IR...")
-    ir_string = dumper.get_function_repr(
+    func_repr = dumper.get_function_repr(
         kernel_func=flash_attention_forward_v2,
         args=[q, k, v, out, hidden_size, Br, Bc],
     )
+    ic(func_repr)
+
+    flattened_ops = flatten_func(func_repr)
+    ic(len(flattened_ops))
+
+    print("Func repr get")
 
 
 if __name__ == "__main__":
