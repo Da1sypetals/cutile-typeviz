@@ -101,10 +101,16 @@ connection.languages.inlayHint.on((params: InlayHintParams): InlayHint[] => {
         return [];
     }
 
-    const text = document.getText();
-
     // 将 URI 转换为文件路径（这就是正在监控的文件）
     const filePath = fileURLToPath(params.textDocument.uri);
+
+    // 只为 .cutile.py 扩展名的文件提供 Inlay Hints
+    if (!filePath.endsWith('.cutile.py')) {
+        return [];
+    }
+
+    const text = document.getText();
+
 
     // 调用正在监控的文件作为 Python 脚本运行
     // 如果失败会直接抛出错误崩溃

@@ -7,6 +7,10 @@
 3. npm run compile （在server/和根目录都要运行）
 4. 在 VSCode 中按 F5 启动扩展开发宿主 
 
+## 注意
+
+- 只为.cutile.py扩展名的文件启用提示
+
 ## 已知问题
 
 - 简单起见当前设计为每行只显示一个inlay hint, 导致问题：
