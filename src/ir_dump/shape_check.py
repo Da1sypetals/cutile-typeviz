@@ -46,6 +46,11 @@ def _get_kernel_shapecheck_ir(kernel_func, args: list):
     return func_ir
 
 
+def _list_all_operations(func: Function) -> list[Operation]:
+    operations = func.root_block._operations
+    return _flatten_operations(operations)
+
+
 def _flatten_operations(operations: list[Operation]) -> list[Operation]:
     flattened = []
     for i in range(len(operations)):
@@ -65,6 +70,8 @@ def _flatten_operations(operations: list[Operation]) -> list[Operation]:
     return flattened
 
 
-def _list_all_operations(func: Function) -> list[Operation]:
-    operations = func.root_block._operations
-    return _flatten_operations(operations)
+def _filter_out_functions_with_multiple_calls(operation: list[Operation]) -> list[Operation]:
+    """
+    functions here means device functions, not kernel
+    """
+    

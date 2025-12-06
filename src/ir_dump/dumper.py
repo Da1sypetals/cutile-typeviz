@@ -58,9 +58,6 @@ class CutileIrDump:
         self,
         kernel_func,
         args: List[Any],
-        constants: Optional[Dict[str, Any]] = None,
-        grid: Optional[Tuple[int, ...]] = None,
-        block: Optional[Tuple[int, ...]] = None,
         kernel_name: Optional[str] = None,
     ) -> Dict[str, str]:
         """
