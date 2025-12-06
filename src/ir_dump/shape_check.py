@@ -39,7 +39,7 @@ class ControlFlowToken(StrEnum):
 
 def _get_ops_for_shapes_info(kernel_func: cutile_kernel, args: list) -> list[Operation]:
     func_ir = _get_kernel_shapecheck_ir(kernel_func, args)
-    flattened_ops = _list_all_operations(func_ir)
+    flattened_ops = _flatten_operations(func_ir.root_block._operations)
     assignment_ops = []
 
     control_flow_lines_mapping = _get_control_flow_lines_mapping(kernel_func._pyfunc)
@@ -70,11 +70,6 @@ def _get_kernel_shapecheck_ir(kernel_func: cutile_kernel, args: list):
     func_ir = infer_types_pass(func_ir, ir_args, pyfunc, default_tile_context)
 
     return func_ir
-
-
-def _list_all_operations(func: Function) -> list[Operation]:
-    operations = func.root_block._operations
-    return _flatten_operations(operations)
 
 
 def _flatten_operations(operations: list[Operation]) -> list[Operation]:

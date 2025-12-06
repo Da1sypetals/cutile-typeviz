@@ -134,9 +134,6 @@ def fmha_kernel(
 if __name__ == "__main__":
     from ir_dump.mock_tensor import MockTensor
     from ir_dump.shape_check import get_kernel_shapes_info
-    from cuda.tile._ir.ops import Assign
-    from ir_dump.shape_check import _get_kernel_shapecheck_ir, _list_all_operations
-    from ir_dump.dumper import CutileIrDump
 
     # 定义参数
     batch_size = 8
@@ -169,21 +166,6 @@ if __name__ == "__main__":
     ]
     # dumper = CutileIrDump("./ir_artifacts")
     # code = dumper.dump_typechecked_ir(fmha_kernel, args, "fmha.tcir")
-
-    # func_ir = _get_kernel_shapecheck_ir(fmha_kernel, args)
-    # flattened_ops = _list_all_operations(func_ir)
-    # assignment_ops = []
-    # for op in flattened_ops:
-    #     if isinstance(op, Assign):
-    #         if not str(op.result_var).startswith("$"):
-    #             print(f"{op.loc}--{op.loc.end_col} | {op}")
-    # op_dict = {
-    #     "line": op.loc.line,
-    #     "col_start": op.loc.col,
-    #     "col_end": op.loc.end_col,
-    #     "ty": str(op.result_var.get_type()),
-    # }
-    # assignment_ops.append(op_dict)
 
     assignment_ops = get_kernel_shapes_info(
         kernel_func=fmha_kernel,
