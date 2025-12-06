@@ -59,6 +59,7 @@ class CutileIrDump:
         kernel_func,
         args: List[Any],
         kernel_name: Optional[str] = None,
+        include_loc: bool = True,
     ) -> Dict[str, str]:
         """
         编译 kernel 并导出 IR
@@ -97,7 +98,7 @@ class CutileIrDump:
         func_ir = _get_final_ir(pyfunc, args, default_tile_context)
 
         # 生成 IR 字符串
-        ir_string = func_ir.to_string(include_loc=False)
+        ir_string = func_ir.to_string(include_loc=include_loc)
 
         # 生成 bytecode
         bytecode_generator = functools.partial(
@@ -278,7 +279,6 @@ class CutileIrDump:
         self,
         kernel_func,
         args: List[Any],
-        constants: Optional[Dict[str, Any]] = None,
         output_file: Optional[str] = None,
     ) -> str:
         """
