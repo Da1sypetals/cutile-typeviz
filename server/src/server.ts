@@ -23,6 +23,7 @@ const connection = createConnection(ProposedFeatures.all);
 const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 
 const CUTILE_SRC_PATH = "/Users/daisy/develop/cutile-python/src";
+const PYTHON_EXECUTABLE = "/Users/daisy/miniconda3/bin/python";
 
 /**
  * Python 脚本输出的结果类型
@@ -46,7 +47,7 @@ function callPythonCutileTypecheck(text: string, scriptPath: string): Array<Hint
     try {
         // 使用 execSync 同步调用正在监控的 Python 文件
         // 通过 stdin 传入文本内容
-        const result = execSync(`PYTHONPATH=${CUTILE_SRC_PATH} python3 "${scriptPath}"`, {
+        const result = execSync(`PYTHONPATH=${CUTILE_SRC_PATH} ${PYTHON_EXECUTABLE} "${scriptPath}"`, {
             input: text,
             encoding: 'utf-8',
             maxBuffer: 10 * 1024 * 1024, // 10MB buffer
