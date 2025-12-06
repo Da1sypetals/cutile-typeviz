@@ -111,19 +111,58 @@ connection.languages.inlayHint.on((params: InlayHintParams): InlayHint[] => {
     const pythonResult = callPythonCutileTypecheck(text, filePath);
 
 
-    const hints: InlayHint[] = [];
 
     // 获取请求的范围
     const startLine = params.range.start.line;
     const endLine = params.range.end.line;
 
-    // 遍历 Python 返回的结果
+    // 过滤结果：如果一行有2个或更多提示，检查它们的ty和起始列是否相同
+    // 如果不同，则不显示该行的任何提示
+    const lineGroups = new Map<number, Array<Hint>>();
+
+    // 首先按行分组
     for (const item of pythonResult) {
-        // 只处理请求范围内的行
         if (item.line < startLine || item.line > endLine) {
             continue;
         }
 
+        if (!lineGroups.has(item.line)) {
+            lineGroups.set(item.line, []);
+        }
+        lineGroups.get(item.line)!.push(item);
+    }
+
+    const filteredResult: Array<Hint> = [];
+
+    // 检查每行的提示
+    for (const [, hints] of lineGroups.entries()) {
+        if (hints.length >= 2) {
+            // 如果有2个或更多提示，检查它们的ty和起始列是否都相同
+            const firstTy = hints[0].ty;
+            const firstColStart = hints[0].col_start;
+            let allSame = true;
+
+            for (let i = 1; i < hints.length; i++) {
+                if (hints[i].ty !== firstTy || hints[i].col_start !== firstColStart) {
+                    allSame = false;
+                    break;
+                }
+            }
+
+            // 只有当所有提示的ty和起始列都相同时才保留，只保留一个
+            if (allSame) {
+                filteredResult.push(hints[0]);
+            }
+        } else {
+            // 只有一个提示，直接保留
+            filteredResult.push(...hints);
+        }
+    }
+
+    const hints: InlayHint[] = [];
+
+    // 遍历过滤后的结果创建 Inlay Hint
+    for (const item of filteredResult) {
         // 创建 Inlay Hint，使用 Python 返回的 marker 来区分
         const hint: InlayHint = {
             // 位置：行首

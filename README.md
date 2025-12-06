@@ -9,4 +9,7 @@
 
 ## 已知问题
 
-- 暂时不支持kernel内部调用自定义函数
+- 简单起见当前设计为每行只显示一个inlay hint, 导致问题：
+    - 由于kernel内调用自定义函数tile function会完全inline，函数的签名不是固定的，如果不同的输入tensor metadata都可以跑通则都可以编译通过。因此，如果一个函数被不同tensor metadata调用多次，则无法正常显示。
+    - 多返回值无法正常显示。
+    - 也就是，只有该行代码的**等号左边只有一个identifier，且其有确定的shape**的时候才能正常显示。
