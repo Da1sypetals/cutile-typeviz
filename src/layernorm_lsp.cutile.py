@@ -1,11 +1,37 @@
 import json
 import cuda.tile as ct
-
+from ir_dump.mock_tensor import MockTensor
+from ir_dump.shape_check import typecheck
 
 ConstInt = ct.Constant[int]
 PAD_ZERO = ct.PaddingMode.ZERO
 
 
+M = 1024  # Batch size (flattened)
+N = 2048  # Feature dimension
+TILE_N = 1024  # Tile size along N dimension
+GROUP_SIZE_M = 64  # Group size for backward pass
+TILE_M = 32  # Tile size for final reduction in backward pass
+
+# Forward pass tensors
+X = MockTensor((M, N), dtype="float16")
+W = MockTensor((N,), dtype="float16")
+B = MockTensor((N,), dtype="float16")
+Y = MockTensor((M, N), dtype="float16")
+Mean = MockTensor((M,), dtype="float32")
+Rstd = MockTensor((M,), dtype="float32")
+
+# Backward pass tensors
+DX = MockTensor((M, N), dtype="float16")
+DY = MockTensor((M, N), dtype="float16")
+DW = MockTensor((GROUP_SIZE_M, N), dtype="float32")
+DB = MockTensor((GROUP_SIZE_M, N), dtype="float32")
+Locks = MockTensor((GROUP_SIZE_M,), dtype="int32")
+FINAL_DW = MockTensor((N,), dtype="float16")
+FINAL_DB = MockTensor((N,), dtype="float16")
+
+
+@typecheck(X, W, B, Y, Mean, Rstd, 1e-5, TILE_N, dump_json=False)
 @ct.kernel
 def layer_norm_fwd(X, W, B, Y, Mean, Rstd, eps, TILE_N: ConstInt):
     """
@@ -67,6 +93,7 @@ def bwd_helper(X, W, DY, bid_m, j, mean, rstd, TILE_N, N):
     return tdy, xhat, wdy
 
 
+@typecheck(DX, DY, DW, DB, X, W, Mean, Rstd, Locks, TILE_N, dump_json=False)
 @ct.kernel
 def layer_norm_bwd_dx_partial_dwdb(DX, DY, DW, DB, X, W, Mean, Rstd, Locks, TILE_N: ConstInt):
     """
@@ -125,6 +152,7 @@ def layer_norm_bwd_dx_partial_dwdb(DX, DY, DW, DB, X, W, Mean, Rstd, Locks, TILE
         ct.atomic_xchg(Locks, group_bid_m, 0, memory_order=ct.MemoryOrder.RELEASE)
 
 
+@typecheck(DW, DB, FINAL_DW, FINAL_DB, TILE_M, TILE_N, dump_json=False)
 @ct.kernel
 def layer_norm_bwd_dwdb(DW, DB, FINAL_DW, FINAL_DB, TILE_M: ConstInt, TILE_N: ConstInt):
     """
@@ -155,51 +183,6 @@ def layer_norm_bwd_dwdb(DW, DB, FINAL_DW, FINAL_DB, TILE_M: ConstInt, TILE_N: Co
 
 
 if __name__ == "__main__":
-    from ir_dump.mock_tensor import MockTensor
-    from ir_dump.shape_check import get_kernel_shapes_info
-
-    # 定义参数
-    M = 1024  # Batch size (flattened)
-    N = 2048  # Feature dimension
-    TILE_N = 1024  # Tile size along N dimension
-    GROUP_SIZE_M = 64  # Group size for backward pass
-    TILE_M = 32  # Tile size for final reduction in backward pass
-
-    # Forward pass tensors
-    X = MockTensor((M, N), dtype="float16")
-    W = MockTensor((N,), dtype="float16")
-    B = MockTensor((N,), dtype="float16")
-    Y = MockTensor((M, N), dtype="float16")
-    Mean = MockTensor((M,), dtype="float32")
-    Rstd = MockTensor((M,), dtype="float32")
-
-    # Backward pass tensors
-    DX = MockTensor((M, N), dtype="float16")
-    DY = MockTensor((M, N), dtype="float16")
-    DW = MockTensor((GROUP_SIZE_M, N), dtype="float32")
-    DB = MockTensor((GROUP_SIZE_M, N), dtype="float32")
-    Locks = MockTensor((GROUP_SIZE_M,), dtype="int32")
-    FINAL_DW = MockTensor((N,), dtype="float16")
-    FINAL_DB = MockTensor((N,), dtype="float16")
-
-    # Get shape info for forward kernel
-    forward_ops = get_kernel_shapes_info(
-        kernel_func=layer_norm_fwd,
-        args=[X, W, B, Y, Mean, Rstd, 1e-5, TILE_N],
-    )
-
-    # Get shape info for backward kernel part 1
-    bwd_dx_ops = get_kernel_shapes_info(
-        kernel_func=layer_norm_bwd_dx_partial_dwdb,
-        args=[DX, DY, DW, DB, X, W, Mean, Rstd, Locks, TILE_N],
-    )
-
-    # Get shape info for backward kernel part 2
-    bwd_dw_ops = get_kernel_shapes_info(
-        kernel_func=layer_norm_bwd_dwdb,
-        args=[DW, DB, FINAL_DW, FINAL_DB, TILE_M, TILE_N],
-    )
-
-    ops = [*forward_ops, *bwd_dx_ops, *bwd_dw_ops]
+    ops = [*layer_norm_fwd(), *layer_norm_bwd_dx_partial_dwdb(), *layer_norm_bwd_dwdb()]
     ops_str = json.dumps(ops)
     print(ops_str)

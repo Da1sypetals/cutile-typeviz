@@ -194,6 +194,12 @@ def typeof_pyval(val, kernel_arg: bool = False) -> Type:
         return TypeTy(val)
     if isinstance(val, Enum):
         return EnumTy(type(val))
+    
+    if hasattr(val, '__mock_tensor_metadata__'):
+        try:
+            return _type_handler['__mock_tensor_metadata__'](val)
+        except KeyError:
+            pass
 
     if hasattr(val, '__cuda_array_interface__'):
         try:
@@ -355,6 +361,59 @@ def from_cuda_array_interface(x: Any) -> ArrayTy:
     dtype = to_dtype(np.dtype(desc['typestr']))
     if dtype.bitwidth % BYTE_BITWIDTH != 0:
         raise ValueError("Only byte-aligned types should be supported by __cuda_array_interface__")
+
+    dtype_bytewidth = dtype.bitwidth // BYTE_BITWIDTH
+    byte_strides = desc.get('strides', None)
+    elem_strides = _compute_elem_strides(desc['shape'], dtype_bytewidth, byte_strides)
+
+    assert len(elem_strides) == len(shape)
+
+    arr_special = ArraySpecialization(
+            desc['data'][0], dtype.bitwidth, tuple(desc['shape']), elem_strides)
+
+    # Assume dynamic strides except for the ones marked static
+    strides = TupleTy(SizeTy(i) if static else SizeTy(None)
+                      for i, static in
+                      zip(elem_strides, arr_special.stride_is_static))
+
+    return ArrayTy(dtype, shape=shape, strides=strides,
+                   elements_disjoint=arr_special.elements_disjoint,
+                   base_ptr_div_by=arr_special.base_ptr_div_by,
+                   stride_div_by=arr_special.stride_div_by,
+                   shape_div_by=arr_special.shape_div_by)
+
+
+
+from cuda.tile._datatype import _enum_to_dtype, DTypeEnum
+
+
+dtype_map = {
+    "bool": DTypeEnum.B1,
+    "uint8": DTypeEnum.U8,
+    "uint16": DTypeEnum.U16,
+    "uint32": DTypeEnum.U32,
+    "uint64": DTypeEnum.U64,
+    "int8": DTypeEnum.I8,
+    "int16": DTypeEnum.I16,
+    "int32": DTypeEnum.I32,
+    "int64": DTypeEnum.I64,
+    "float32": DTypeEnum.F32,
+    "float64": DTypeEnum.F64,
+    "float16": DTypeEnum.F16,
+    "bfloat16": DTypeEnum.BF,
+    "tfloat32": DTypeEnum.TF32,
+    "float8_e4m3fn": DTypeEnum.F8E4M3FN,
+    "float8_e5m2": DTypeEnum.F8E5M2,
+}
+
+@register_type_handler('__mock_tensor_metadata__')
+def from_mock_tensor_metadata(x: Any) -> ArrayTy:
+    desc = x.__mock_tensor_metadata__
+    # Assume dynamic shape
+    shape = TupleTy(SizeTy(None) for i in desc['shape'])
+    dtype = _enum_to_dtype[dtype_map[desc['dtype_str']]]
+    if dtype.bitwidth % BYTE_BITWIDTH != 0:
+        raise ValueError("Only byte-aligned types should be supported by __mock_tensor_metadata__")
 
     dtype_bytewidth = dtype.bitwidth // BYTE_BITWIDTH
     byte_strides = desc.get('strides', None)

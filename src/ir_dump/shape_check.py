@@ -14,10 +14,9 @@ from cuda.tile._execution import kernel as cutile_kernel
 from cuda.tile._ir import ir
 from enum import StrEnum
 from functools import wraps
-import json
 
 
-def typecheck(*kernel_args):
+def typecheck(*kernel_args, dump_json: bool = True):
     def decorator(kernel):
         @wraps(kernel)
         def wrapper(*args, **kwargs):
@@ -25,8 +24,12 @@ def typecheck(*kernel_args):
                 kernel_func=kernel,
                 args=[*kernel_args],
             )
-            ops_str = json.dumps(ops)
-            return ops_str
+            if dump_json:
+                import json
+
+                return json.dumps(ops)
+            else:
+                return ops
 
         return wrapper
 

@@ -1,6 +1,5 @@
 import json
 import cuda.tile as ct
-from functools import wraps
 from ir_dump.mock_tensor import MockTensor
 from ir_dump.shape_check import typecheck
 import torch
@@ -17,9 +16,9 @@ N_DIM = 1024
 # B_fp16 = torch.randn((BATCH_DIM, K_DIM, N_DIM), dtype=torch.bfloat16, device="meta")
 # out = torch.randn((BATCH_DIM, M_DIM, N_DIM), dtype=torch.bfloat16, device="meta")
 
-A_fp16 = MockTensor((BATCH_DIM, M_DIM, K_DIM), dtype="float16")
-B_fp16 = MockTensor((BATCH_DIM, K_DIM, N_DIM), dtype="float16")
-out = MockTensor((BATCH_DIM, M_DIM, N_DIM), dtype="float16")
+A_fp16 = MockTensor((BATCH_DIM, M_DIM, K_DIM), dtype="bfloat16")
+B_fp16 = MockTensor((BATCH_DIM, K_DIM, N_DIM), dtype="bfloat16")
+out = MockTensor((BATCH_DIM, M_DIM, N_DIM), dtype="bfloat16")
 tm_val, tn_val, tk_val = 128, 256, 64
 
 
