@@ -8,7 +8,10 @@ import {
     InlayHint,
     InlayHintParams,
     Position,
-    InlayHintKind
+    InlayHintKind,
+    Diagnostic,
+    DiagnosticSeverity,
+    Range
 } from 'vscode-languageserver/node';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
@@ -26,6 +29,9 @@ const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 
 // 缓存：存储每个文件的 inlay hints
 const hintsCache: Map<string, Array<Hint>> = new Map();
+
+// 缓存：存储每个文件的诊断信息
+const diagnosticsCache: Map<string, Diagnostic[]> = new Map();
 
 // 记录正在运行的 Python 任务，避免重复启动
 const runningTasks: Map<string, boolean> = new Map();
@@ -74,6 +80,26 @@ interface Hint {
 }
 
 /**
+ * TileError 错误信息接口
+ */
+interface TileErrorInfo {
+    message: string;
+    line: number;
+    col: number;
+    last_line?: number;
+    end_col?: number;
+    filename?: string;
+}
+
+/**
+ * 新的结果格式接口
+ */
+interface PythonResult {
+    success: boolean;
+    content: Hint[] | TileErrorInfo;
+}
+
+/**
  * Call Python script to perform cuTile type checking (synchronous version)
  * If Python execution fails, throw error
  * 
@@ -81,7 +107,7 @@ interface Hint {
  * @param scriptPath The Python script path to run (the file being monitored)
  * @returns JSON result output from Python script
  */
-function callPythonCutileTypecheckSync(text: string, scriptPath: string): Array<Hint> {
+function callPythonCutileTypecheckSync(text: string, scriptPath: string): PythonResult {
     // 第一步：执行 assemble.py 脚本处理输入
     const assembleScriptFullPath = ASSEMBLE_SCRIPT_PATH;
     execSync(`PYTHONPATH=${CUTILE_SRC_PATH} ${PYTHON_EXECUTABLE} "${assembleScriptFullPath}" -f "${scriptPath}"`, {
@@ -100,7 +126,7 @@ function callPythonCutileTypecheckSync(text: string, scriptPath: string): Array<
 
     // 第三步：读取 TYPECHECK_INFO_PATH 文件获取结果
     const typecheckResult = fs.readFileSync(TYPECHECK_INFO_PATH, 'utf-8');
-    const jsonResult: Array<Hint> = JSON.parse(typecheckResult);
+    const jsonResult: PythonResult = JSON.parse(typecheckResult);
 
     return jsonResult;
 }
@@ -175,21 +201,42 @@ function callPythonCutileTypecheckAsync(text: string, scriptPath: string, uri: s
                         // 第三步：读取 TYPECHECK_INFO_PATH 文件获取结果
                         const readStartTime = Date.now();
                         const typecheckResult = fs.readFileSync(TYPECHECK_INFO_PATH, 'utf-8');
-                        const jsonResult: Array<Hint> = JSON.parse(typecheckResult);
+                        const jsonResult: PythonResult = JSON.parse(typecheckResult);
                         const readEndTime = Date.now();
                         const readElapsed = readEndTime - readStartTime;
 
                         log(`Step 3 - Read and parse typecheck result completed in ${readElapsed}ms`);
 
-                        // 更新缓存
-                        hintsCache.set(uri, jsonResult);
+                        // 处理结果
+                        if (jsonResult.success && Array.isArray(jsonResult.content)) {
+                            // 成功情况：更新inlay hints缓存，清空诊断缓存
+                            hintsCache.set(uri, jsonResult.content);
+                            diagnosticsCache.set(uri, []);
 
-                        const totalEndTime = Date.now();
-                        const totalElapsed = totalEndTime - totalStartTime;
-                        log(`Cache updated for ${uri} with ${jsonResult.length} hints (total time: ${totalElapsed}ms)`);
+                            const totalEndTime = Date.now();
+                            const totalElapsed = totalEndTime - totalStartTime;
+                            log(`Cache updated for ${uri} with ${jsonResult.content.length} hints (total time: ${totalElapsed}ms)`);
+                        } else if (!jsonResult.success && typeof jsonResult.content === 'object' && jsonResult.content !== null) {
+                            // 失败情况：清空inlay hints缓存，设置诊断信息
+                            hintsCache.set(uri, []);
 
-                        // 触发 inlay hints 刷新
+                            const errorInfo = jsonResult.content as TileErrorInfo;
+                            // 获取当前文档以创建诊断范围
+                            const currentDocument = documents.get(uri);
+                            const diagnostics = currentDocument ? createDiagnosticsFromTileError(errorInfo, currentDocument) : [];
+                            diagnosticsCache.set(uri, diagnostics);
+
+                            log(`Typecheck failed for ${uri}: ${errorInfo.message}`);
+                        } else {
+                            // 未知结果格式：清空缓存
+                            hintsCache.set(uri, []);
+                            diagnosticsCache.set(uri, []);
+                            log(`Unknown result format for ${uri}: ${JSON.stringify(jsonResult)}`);
+                        }
+
+                        // 触发 inlay hints 刷新和诊断刷新
                         connection.languages.inlayHint.refresh();
+                        connection.sendDiagnostics({ uri, diagnostics: diagnosticsCache.get(uri) || [] });
                     } catch (parseError: any) {
                         logError(`Failed to parse typecheck result: ${parseError.message}`);
                     }
@@ -205,6 +252,47 @@ function callPythonCutileTypecheckAsync(text: string, scriptPath: string, uri: s
     }
 }
 
+/**
+ * 从TileError信息创建诊断信息
+ */
+function createDiagnosticsFromTileError(errorInfo: TileErrorInfo, document: TextDocument): Diagnostic[] {
+    const diagnostics: Diagnostic[] = [];
+
+    // 创建主诊断信息
+    const diagnostic: Diagnostic = {
+        severity: DiagnosticSeverity.Error,
+        range: createRangeFromErrorInfo(errorInfo, document),
+        message: errorInfo.message,
+        source: 'cuTile'
+    };
+
+    diagnostics.push(diagnostic);
+    return diagnostics;
+}
+
+/**
+ * 从错误信息创建范围
+ */
+function createRangeFromErrorInfo(errorInfo: TileErrorInfo, document: TextDocument): Range {
+    const line = Math.max(0, errorInfo.line - 1); // 转换为0-based索引
+    const col = Math.max(0, errorInfo.col - 1);   // 转换为0-based索引
+
+    let endLine = line;
+    let endCol = col;
+
+    // 如果有结束位置信息，使用它
+    if (errorInfo.last_line !== undefined && errorInfo.end_col !== undefined) {
+        endLine = Math.max(0, errorInfo.last_line - 1);
+        endCol = Math.max(0, errorInfo.end_col - 1);
+    } else {
+        // 如果没有结束位置，使用行的末尾
+        const lineText = document.getText(Range.create(line, 0, line + 1, 0));
+        endCol = lineText.length;
+    }
+
+    return Range.create(line, col, endLine, endCol);
+}
+
 // 初始化处理
 connection.onInitialize((params: InitializeParams): InitializeResult => {
     log('LSP Server initializing...');
@@ -214,7 +302,13 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
             // 文档同步方式：完整同步
             textDocumentSync: TextDocumentSyncKind.Full,
             // 启用 Inlay Hint 功能
-            inlayHintProvider: true
+            inlayHintProvider: true,
+            // 启用诊断功能
+            diagnosticProvider: {
+                documentSelector: [{ scheme: 'file', language: 'python' }],
+                interFileDependencies: false,
+                workspaceDiagnostics: false
+            }
         }
     };
 });
@@ -242,7 +336,14 @@ connection.languages.inlayHint.on((params: InlayHintParams): InlayHint[] => {
     const uri = params.textDocument.uri;
 
     // 只从缓存获取结果，不触发 Python 任务（Python 任务只在保存和内容变更时触发）
-    const pythonResult = hintsCache.get(uri) || [];
+    const cachedResult = hintsCache.get(uri);
+
+    // 如果缓存中没有结果或者结果不是数组（可能是错误信息），返回空数组
+    if (!cachedResult || !Array.isArray(cachedResult)) {
+        return [];
+    }
+
+    const pythonResult: Hint[] = cachedResult;
 
     // 获取请求的范围
     const startLine = params.range.start.line;
@@ -335,6 +436,16 @@ function handleDocumentChange(document: TextDocument, eventName: string): void {
 // 监听文档变化，触发 Inlay Hint 刷新
 documents.onDidSave(change => handleDocumentChange(change.document, 'onDidSave'));
 documents.onDidChangeContent(change => handleDocumentChange(change.document, 'onDidChangeContent'));
+
+// 监听文档关闭，清理诊断信息
+documents.onDidClose(change => {
+    const uri = change.document.uri;
+    // 清理缓存
+    hintsCache.delete(uri);
+    diagnosticsCache.delete(uri);
+    // 发送空诊断信息以清除显示
+    connection.sendDiagnostics({ uri, diagnostics: [] });
+});
 
 // 文档管理器监听连接
 documents.listen(connection);

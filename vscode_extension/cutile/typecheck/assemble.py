@@ -11,17 +11,21 @@ TYPECHECK_INFO_PATH = Path.home() / CACHE_DIR_NAME / TYPECHECK_INFO_FILENAME
 
 head = """
 import json
+import traceback
 from ir_dump.mock_tensor import MockTensor
 from ir_dump.shape_check import get_kernel_shapes_info
 from pathlib import Path
+from cuda.tile._exception import TileError, Loc
 
 ops = []
 """
 
 tail = f"""
-ops_str = json.dumps(ops)
+# 序列化结果，只包含必要的字段
+result = {{"success": True, "content": ops}}
+result_str = json.dumps(result)
 typecheck_info_path = Path("{TYPECHECK_INFO_PATH}").resolve()
-typecheck_info_path.write_text(ops_str)
+typecheck_info_path.write_text(result_str)
 """
 
 entrance = """
@@ -91,12 +95,36 @@ def launch_code(kernel: Kernel):
     args = ", ".join(kernel.args_str)
     ops_name = f"ops_{kernel.name}"
     code = f"""
-{ops_name} = get_kernel_shapes_info(
-    kernel_func={kernel.name},
-    args=[{args}],
-)
-
-ops.extend({ops_name})
+try:
+    {ops_name} = get_kernel_shapes_info(
+        kernel_func={kernel.name},
+        args=[{args}],
+    )
+    ops.extend({ops_name})
+except TileError as e:
+    # 如果遇到TileError，设置失败标志并序列化错误信息
+    result["success"] = False
+    
+    # 序列化Loc信息，只包含必要的字段
+    loc_info = {{
+        "message": e.message,
+        "line": e.loc.line,
+        "col": e.loc.col
+    }}
+    
+    # 添加可选的字段（如果存在）
+    if e.loc.last_line is not None:
+        loc_info["last_line"] = e.loc.last_line
+    if e.loc.end_col is not None:
+        loc_info["end_col"] = e.loc.end_col
+    if e.loc.filename is not None:
+        loc_info["filename"] = e.loc.filename
+    
+    result["content"] = loc_info
+    content_json = json.dumps(result)
+    typecheck_info_path = Path("{TYPECHECK_INFO_PATH}").resolve()
+    typecheck_info_path.write_text(content_json)
+    return
 """
     return code
 
@@ -112,6 +140,9 @@ def generate_typecheck_code(file_path, module_name="custom_module"):
 
     code_parts = []
     code_parts.append(head)
+
+    # 在main函数开始时定义result变量
+    code_parts.append("result = {'success': True, 'content': []}")
 
     for name in module.__dir__():
         item = getattr(module, name)
