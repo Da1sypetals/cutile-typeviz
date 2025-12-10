@@ -67,16 +67,16 @@ interface Hint {
 }
 
 /**
- * 调用 Python 脚本计算每行的最大字符出现次数
- * 如果 Python 执行失败，直接抛出错误崩溃
+ * Call Python script to perform cuTile type checking
+ * If Python execution fails, throw error and crash
  * 
- * 执行流程：
- * 1. 先执行 ASSEMBLE_SCRIPT_PATH (typecheck/assemble.py) 处理输入
- * 2. 然后执行 OUTPUT_PATH (~/.cutile-typeviz/main.py) 获取结果
+ * Execution flow:
+ * 1. First execute ASSEMBLE_SCRIPT_PATH (typecheck/assemble.py) to process input
+ * 2. Then execute OUTPUT_PATH (~/.cutile-typeviz/main.py) to get results
  * 
- * @param text 要分析的文本内容
- * @param scriptPath 要运行的 Python 脚本路径（正在监控的文件）
- * @returns Python 脚本输出的 JSON 结果
+ * @param text The text content to analyze
+ * @param scriptPath The Python script path to run (the file being monitored)
+ * @returns JSON result output from Python script
  */
 function callPythonCutileTypecheck(text: string, scriptPath: string): Array<Hint> {
     try {
@@ -122,7 +122,7 @@ function callPythonCutileTypecheck(text: string, scriptPath: string): Array<Hint
 
 // 初始化处理
 connection.onInitialize((params: InitializeParams): InitializeResult => {
-    log('LSP Server 初始化中...');
+    log('LSP Server initializing...');
 
     return {
         capabilities: {
@@ -136,7 +136,7 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
 
 // 初始化完成
 connection.onInitialized(() => {
-    log('LSP Server 初始化完成');
+    log('LSP Server initialized');
 });
 
 // Inlay Hint 请求处理
@@ -167,11 +167,11 @@ connection.languages.inlayHint.on((params: InlayHintParams): InlayHint[] => {
     const startLine = params.range.start.line;
     const endLine = params.range.end.line;
 
-    // 过滤结果：如果一行有2个或更多提示，检查它们的ty和起始列是否相同
-    // 如果不同，则不显示该行的任何提示
+    // Filter results: if a line has 2 or more hints, check if their ty and starting column are the same
+    // If different, don't show any hints for that line
     const lineGroups = new Map<number, Array<Hint>>();
 
-    // 首先按行分组
+    // First group by line
     for (const item of pythonResult) {
         if (item.line < startLine || item.line > endLine) {
             continue;
@@ -185,10 +185,10 @@ connection.languages.inlayHint.on((params: InlayHintParams): InlayHint[] => {
 
     const filteredResult: Array<Hint> = [];
 
-    // 检查每行的提示
+    // Check hints for each line
     for (const [, hints] of lineGroups.entries()) {
         if (hints.length >= 2) {
-            // 如果有2个或更多提示，检查它们的ty和起始列是否都相同
+            // If there are 2 or more hints, check if their ty and starting column are all the same
             const firstTy = hints[0].ty;
             const firstColStart = hints[0].col_start;
             let allSame = true;
@@ -200,29 +200,29 @@ connection.languages.inlayHint.on((params: InlayHintParams): InlayHint[] => {
                 }
             }
 
-            // 只有当所有提示的ty和起始列都相同时才保留，只保留一个
+            // Only keep one hint when all hints have the same ty and starting column
             if (allSame) {
                 filteredResult.push(hints[0]);
             }
         } else {
-            // 只有一个提示，直接保留
+            // Only one hint, keep it directly
             filteredResult.push(...hints);
         }
     }
 
     const hints: InlayHint[] = [];
 
-    // 遍历过滤后的结果创建 Inlay Hint
+    // Iterate through filtered results to create Inlay Hints
     for (const item of filteredResult) {
-        // 创建 Inlay Hint，使用 Python 返回的 marker 来区分
+        // Create Inlay Hint with type information from Python
         const hint: InlayHint = {
-            // 位置：行首
+            // Position: at the specified column
             position: Position.create(item.line - 1, item.col_start),
-            // 显示内容：使用 Python 的 marker + 最大字符数
+            // Display content: type information
             label: `${item.ty}`,
-            // 类型：设置为 Type 类型
+            // Kind: set as Type
             kind: InlayHintKind.Type,
-            // 设置为在左侧显示（paddingRight 在右侧添加间距）
+            // Display on the left side (paddingRight adds spacing on the right)
             paddingRight: true
         };
 
@@ -236,11 +236,11 @@ connection.languages.inlayHint.on((params: InlayHintParams): InlayHint[] => {
 
 // 监听文档变化，触发 Inlay Hint 刷新
 documents.onDidSave(change => {
-    // 当文档内容变化时，通知客户端刷新 Inlay Hint
+    // When document is saved, notify client to refresh Inlay Hints
     connection.languages.inlayHint.refresh();
 });
 documents.onDidChangeContent(change => {
-    // 当文档内容变化时，通知客户端刷新 Inlay Hint
+    // When document content changes, notify client to refresh Inlay Hints
     connection.languages.inlayHint.refresh();
 });
 
@@ -250,4 +250,4 @@ documents.listen(connection);
 // 启动连接监听
 connection.listen();
 
-log('cuTile typeviz Server 已启动 (Python backend)');
+log('cuTile typeviz Server started (Python backend)');
