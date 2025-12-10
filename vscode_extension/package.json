@@ -1,0 +1,46 @@
+{
+    "name": "cutile-typeviz",
+    "displayName": "cuTile typeviz",
+    "description": "cuTile type hints",
+    "version": "1.0.0",
+    "publisher": "da1sypetals",
+    "engines": {
+        "vscode": "^1.75.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "activationEvents": [
+        "onLanguage:plaintext",
+        "onLanguage:*"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "configuration": {
+            "type": "object",
+            "title": "cuTile typeviz",
+            "properties": {
+                "cuTileTypeviz.enable": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "启用/禁用 cuTile typeviz"
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -b",
+        "watch": "tsc -b -w",
+        "lint": "eslint ./src --ext .ts,.tsx",
+        "postinstall": "cd server && npm install && cd .."
+    },
+    "devDependencies": {
+        "@types/node": "^18.0.0",
+        "@types/vscode": "^1.75.0",
+        "typescript": "^5.0.0"
+    },
+    "dependencies": {
+        "vscode-languageclient": "^9.0.1"
+    }
+}

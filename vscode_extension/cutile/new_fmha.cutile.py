@@ -1,4 +1,7 @@
-import json
+"""
+fmha_kernel
+"""
+
 import cuda.tile as ct
 import math
 import numpy as np
@@ -8,6 +11,22 @@ from cuda.tile import RoundingMode
 INV_LOG_2 = 1.0 / math.log(2)
 ConstInt = ct.Constant[int]
 ConstBool = ct.Constant[bool]
+
+
+@ct.kernel
+def add(
+    a,
+    b,
+    ts: ConstInt,
+):
+    """
+    <typecheck>
+    MockTensor((2048, 512), dtype='bfloat16')
+    MockTensor((2048, 512), dtype='bfloat16')
+    16
+    </typecheck>
+    """
+    bid = ct.bid(0)
 
 
 @ct.kernel(occupancy=2)
@@ -27,6 +46,13 @@ def fmha_kernel(
     EVEN_K: ConstBool,
 ):
     """
+    <typecheck>
+    MockTensor((2,4), dtype='bfloat16')
+    MockTensor((2,4), dtype='bfloat16')
+    MockTensor((2,4), dtype='bfloat16')
+    3
+    1
+    </typecheck>
     cuTile kernel for Fused Multi-Head Attention (FMHA).
     Computes attention output for a specific batch item and head, using tiling and online softmax.
     """
@@ -131,61 +157,3 @@ def fmha_kernel(
     acc = ct.truediv(acc, l_i, flush_to_zero=True, rounding_mode=RoundingMode.APPROX)
     acc = acc.reshape((1, 1, TILE_M, TILE_D)).astype(Out.dtype)
     ct.store(Out, index=(batch_idx, head_idx, bid_x, 0), tile=acc)
-
-
-if __name__ == "__main__":
-    from ir_dump.mock_tensor import MockTensor
-    from ir_dump.shape_check import get_kernel_shapes_info
-
-    # 定义参数
-    batch_size = 8
-    num_head = 16
-    seq_len = 1024
-    hidden_size = 64
-    tile_m = 32  # block row size
-    tile_n = 32  # block col size
-
-    q = MockTensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
-    k = MockTensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
-    v = MockTensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
-    out = MockTensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
-
-    even_k = (seq_len % tile_n) == 0
-    args = [
-        q,
-        k,
-        v,
-        out,
-        hidden_size ** (-0.5),
-        0,
-        hidden_size,
-        num_head,
-        tile_m,
-        tile_n,
-        1,
-        True,
-        even_k,
-    ]
-    # dumper = CutileIrDump("./ir_artifacts")
-    # code = dumper.dump_typechecked_ir(fmha_kernel, args, "fmha.tcir")
-
-    assignment_ops = get_kernel_shapes_info(
-        kernel_func=fmha_kernel,
-        args=[
-            q,
-            k,
-            v,
-            out,
-            hidden_size ** (-0.5),
-            0,
-            hidden_size,
-            num_head,
-            tile_m,
-            tile_n,
-            1,
-            True,
-            even_k,
-        ],
-    )
-    ops_str = json.dumps(assignment_ops)
-    print(ops_str)
