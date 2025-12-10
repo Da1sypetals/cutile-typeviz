@@ -51,10 +51,11 @@ function logError(message: string, ...args: any[]): void {
 // TODO: use current selected python interpreter
 const PYTHON_EXECUTABLE = "/root/miniconda3/bin/python";
 
+const CACHE_DIR_NAME = ".cutile-typeviz";
 const CUTILE_SRC_PATH = path.join(__dirname, '..', '..', 'cutile');
 const ASSEMBLE_SCRIPT_PATH = path.join(CUTILE_SRC_PATH, "typecheck", "assemble.py");
-const OUTPUT_PATH = path.join(os.homedir(), ".cutile-typeviz", "main.py");
-const TYPECHECK_INFO_PATH = path.join(os.homedir(), ".cutile-typeviz", "typecheck.json");
+const OUTPUT_PATH = path.join(os.homedir(), CACHE_DIR_NAME, "main.py");
+const TYPECHECK_INFO_PATH = path.join(os.homedir(), CACHE_DIR_NAME, "typecheck.json");
 
 /**
  * Python 脚本输出的结果类型
