@@ -1,10 +1,5 @@
-"""
-cuTile typeviz LSP Server (Python backend using pygls v2)
-
-完整移植自 TypeScript 版本，使用 pygls v2 API。
-"""
-
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -13,7 +8,6 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import unquote, urlparse
 
 from lsprotocol import types
 from pygls.lsp.server import LanguageServer
@@ -97,42 +91,34 @@ class PythonResult:
 
 
 # ============================================================
-# 日志工具函数
+# 日志配置
 # ============================================================
 
 
-def get_timestamp() -> str:
-    """获取带毫秒的时间戳"""
-    now = datetime.now()
-    return now.strftime("%Y-%m-%d %H:%M:%S.") + f"{now.microsecond // 1000:03d}"
+def setup_logger() -> logging.Logger:
+    """配置并返回日志记录器"""
+    logger = logging.getLogger("cutile-typeviz")
+    logger.setLevel(logging.DEBUG)
+
+    # 创建 stderr 处理器
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setLevel(logging.DEBUG)
+
+    # 设置日志格式（带毫秒的时间戳）
+    formatter = logging.Formatter(
+        fmt="[%(asctime)s.%(msecs)03d] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    handler.setFormatter(formatter)
+
+    # 避免重复添加处理器
+    if not logger.handlers:
+        logger.addHandler(handler)
+
+    return logger
 
 
-def log(message: str, *args: Any) -> None:
-    """日志输出 - 带时间戳"""
-    print(f"[{get_timestamp()}] {message}", *args, file=sys.stderr)
-
-
-def log_error(message: str, *args: Any) -> None:
-    """错误日志输出 - 带时间戳"""
-    print(f"[{get_timestamp()}] ERROR: {message}", *args, file=sys.stderr)
-
-
-# ============================================================
-# URI 转文件路径
-# ============================================================
-
-
-def uri_to_fs_path(uri: str) -> str:
-    """将 file:// URI 转换为文件系统路径"""
-    parsed = urlparse(uri)
-    if parsed.scheme != "file":
-        return ""
-    # 解码 URL 编码的路径
-    path = unquote(parsed.path)
-    # Windows 路径处理（/C:/path -> C:/path）
-    if path.startswith("/") and len(path) > 2 and path[2] == ":":
-        path = path[1:]
-    return path
+# 全局日志记录器
+logger = setup_logger()
 
 
 # ============================================================
@@ -256,7 +242,7 @@ def call_python_cutile_typecheck_sync(
     """
     # 检查是否有 Python 解释器
     if not python_executable:
-        log("No Python interpreter configured, skipping typecheck")
+        logger.warning("No Python interpreter configured, skipping typecheck")
         return None
 
     env = os.environ.copy()
@@ -303,7 +289,7 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
     """
     # 检查是否有 Python 解释器
     if not server.python_executable:
-        log("No Python interpreter configured, skipping typecheck")
+        logger.warning("No Python interpreter configured, skipping typecheck")
         # 清空缓存和诊断
         with server._lock:
             server.hints_cache[uri] = []
@@ -314,13 +300,13 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
     # 如果该文件已有正在运行的任务，不重复启动
     with server._lock:
         if server.running_tasks.get(uri, False):
-            log(f"Python task already running for {uri}, skipping")
+            logger.debug(f"Python task already running for {uri}, skipping")
             return
         server.running_tasks[uri] = True
 
     def run_typecheck():
         total_start_time = datetime.now()
-        log(f"Starting async Python task for {uri}")
+        logger.info(f"Starting async Python task for {uri}")
 
         env = os.environ.copy()
         env["PYTHONPATH"] = str(CUTILE_SRC_PATH)
@@ -341,7 +327,7 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
             assemble_elapsed = (datetime.now() - assemble_start_time).total_seconds() * 1000
 
             if result.returncode != 0:
-                log_error(f"Assemble script failed (took {assemble_elapsed:.0f}ms): {result.stderr}")
+                logger.error(f"Assemble script failed (took {assemble_elapsed:.0f}ms): {result.stderr}")
                 with server._lock:
                     server.running_tasks[uri] = False
 
@@ -359,7 +345,7 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
                 )
                 return
 
-            log(f"Step 1 - Assemble script completed in {assemble_elapsed:.0f}ms")
+            logger.debug(f"Step 1 - Assemble script completed in {assemble_elapsed:.0f}ms")
 
             # 第二步：异步执行 OUTPUT_PATH 文件获取最终结果
             output_start_time = datetime.now()
@@ -378,7 +364,7 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
                 server.running_tasks[uri] = False
 
             if result2.returncode != 0:
-                log_error(f"Output script failed (took {output_elapsed:.0f}ms): {result2.stderr}")
+                logger.error(f"Output script failed (took {output_elapsed:.0f}ms): {result2.stderr}")
 
                 # 报告错误给用户
                 error_message = (
@@ -394,7 +380,7 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
                 )
                 return
 
-            log(f"Step 2 - Output script completed in {output_elapsed:.0f}ms")
+            logger.debug(f"Step 2 - Output script completed in {output_elapsed:.0f}ms")
 
             try:
                 # 第三步：读取 TYPECHECK_INFO_PATH 文件获取结果
@@ -404,7 +390,7 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
                 json_result = PythonResult.from_dict(json.loads(typecheck_result))
                 read_elapsed = (datetime.now() - read_start_time).total_seconds() * 1000
 
-                log(f"Step 3 - Read and parse typecheck result completed in {read_elapsed:.0f}ms")
+                logger.debug(f"Step 3 - Read and parse typecheck result completed in {read_elapsed:.0f}ms")
 
                 # 处理结果
                 if json_result.success and isinstance(json_result.content, list):
@@ -415,7 +401,7 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
                         server.diagnostics_cache[uri] = []
 
                     total_elapsed = (datetime.now() - total_start_time).total_seconds() * 1000
-                    log(
+                    logger.info(
                         f"Cache updated for {uri} with {len(hints)} hints (total time: {total_elapsed:.0f}ms)"
                     )
 
@@ -435,27 +421,27 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
                     with server._lock:
                         server.diagnostics_cache[uri] = diagnostics
 
-                    log(f"Typecheck failed for {uri}: {error_info.message}")
+                    logger.warning(f"Typecheck failed for {uri}: {error_info.message}")
 
                 else:
                     # 未知结果格式：清空缓存
                     with server._lock:
                         server.hints_cache[uri] = []
                         server.diagnostics_cache[uri] = []
-                    log(f"Unknown result format for {uri}: {json_result.content}")
+                    logger.warning(f"Unknown result format for {uri}: {json_result.content}")
 
                 # 触发 inlay hints 刷新和诊断刷新
                 try:
                     server.workspace_inlay_hint_refresh(None)
                 except Exception as e:
-                    log(f"Failed to refresh inlay hints: {e}")
+                    logger.debug(f"Failed to refresh inlay hints: {e}")
 
                 server.text_document_publish_diagnostics(
                     types.PublishDiagnosticsParams(uri=uri, diagnostics=server.diagnostics_cache.get(uri, []))
                 )
 
             except Exception as parse_error:
-                log_error(f"Failed to parse typecheck result: {parse_error}")
+                logger.error(f"Failed to parse typecheck result: {parse_error}")
 
                 # 报告错误给用户
                 error_message = f"Failed to parse typecheck result: {parse_error}"
@@ -467,7 +453,7 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
                 )
 
         except subprocess.TimeoutExpired:
-            log_error(f"Python task timed out for {uri}")
+            logger.error(f"Python task timed out for {uri}")
             with server._lock:
                 server.running_tasks[uri] = False
                 server.hints_cache[uri] = []
@@ -479,7 +465,7 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
             )
 
         except Exception as e:
-            log_error(f"Unexpected error in Python task for {uri}: {e}")
+            logger.exception(f"Unexpected error in Python task for {uri}: {e}")
             with server._lock:
                 server.running_tasks[uri] = False
                 server.hints_cache[uri] = []
@@ -505,13 +491,13 @@ def handle_document_change(uri: str, event_name: str) -> None:
         uri: 文档 URI
         event_name: 事件名称（用于日志）
     """
-    file_path = uri_to_fs_path(uri)
+    file_path = str(Path.from_uri(uri))
 
     # 只为 RECOGNIZED_EXTENSION 扩展名的文件触发刷新
     if not file_path.endswith(RECOGNIZED_EXTENSION):
         return
 
-    log(f"[Event: {event_name}] Triggering Python task: {uri}")
+    logger.debug(f"[Event: {event_name}] Triggering Python task: {uri}")
 
     document = server.workspace.get_text_document(uri)
     if document:
@@ -527,15 +513,15 @@ def handle_document_change(uri: str, event_name: str) -> None:
 @server.feature(types.INITIALIZE)
 def on_initialize(params: types.InitializeParams) -> types.InitializeResult:
     """初始化处理"""
-    log("LSP Server initializing...")
+    logger.info("LSP Server initializing...")
 
     # 从初始化参数中获取 Python 解释器路径
     init_options = params.initialization_options
     if init_options and isinstance(init_options, dict) and init_options.get("pythonPath"):
         server.python_executable = init_options["pythonPath"]
-        log(f"Python interpreter set to: {server.python_executable}")
+        logger.info(f"Python interpreter set to: {server.python_executable}")
     else:
-        log("No Python interpreter provided, hints will be disabled")
+        logger.warning("No Python interpreter provided, hints will be disabled")
 
     return types.InitializeResult(
         capabilities=types.ServerCapabilities(
@@ -558,7 +544,7 @@ def on_initialize(params: types.InitializeParams) -> types.InitializeResult:
 @server.feature(types.INITIALIZED)
 def on_initialized(params: types.InitializedParams) -> None:
     """初始化完成"""
-    log("LSP Server initialized")
+    logger.info("LSP Server initialized")
 
 
 # 监听 Python 解释器路径变化的自定义通知
@@ -572,14 +558,14 @@ def on_python_path_changed(params: Any) -> None:
     else:
         server.python_executable = None
 
-    log(f"Python interpreter changed: {old_path} -> {server.python_executable}")
+    logger.info(f"Python interpreter changed: {old_path} -> {server.python_executable}")
 
     # 如果有新的解释器，触发所有打开文档的刷新
     if server.python_executable:
         for uri, doc in server.workspace.text_documents.items():
-            file_path = uri_to_fs_path(uri)
+            file_path = str(Path.from_uri(uri))
             if file_path.endswith(RECOGNIZED_EXTENSION):
-                log(f"Refreshing hints for {uri} due to interpreter change")
+                logger.debug(f"Refreshing hints for {uri} due to interpreter change")
                 call_python_cutile_typecheck_async(doc.source, file_path, uri)
     else:
         # 如果解释器被清除，清空所有缓存
@@ -593,7 +579,7 @@ def on_python_path_changed(params: Any) -> None:
         try:
             server.workspace_inlay_hint_refresh(None)
         except Exception as e:
-            log(f"Failed to refresh inlay hints: {e}")
+            logger.debug(f"Failed to refresh inlay hints: {e}")
 
 
 @server.feature(types.TEXT_DOCUMENT_INLAY_HINT)
@@ -606,7 +592,7 @@ def on_inlay_hint(params: types.InlayHintParams) -> List[types.InlayHint]:
         return []
 
     # 将 URI 转换为文件路径（这就是正在监控的文件）
-    file_path = uri_to_fs_path(uri)
+    file_path = str(Path.from_uri(uri))
 
     # 只为 RECOGNIZED_EXTENSION 扩展名的文件提供 Inlay Hints
     if not file_path.endswith(RECOGNIZED_EXTENSION):
@@ -722,7 +708,7 @@ def on_did_close(params: types.DidCloseTextDocumentParams) -> None:
 
 def main():
     """主入口函数"""
-    log("cuTile typeviz Server started (Python backend)")
+    logger.info("cuTile typeviz Server started (Python backend)")
     server.start_io()
 
 
