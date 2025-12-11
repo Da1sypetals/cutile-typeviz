@@ -1,21 +1,27 @@
 #!/usr/bin/env python3
 """
-Flash Attention Kernel IR Dump 示例
+Flash Attention Kernel IR Dump Example
 
-使用 ir_dump 库编译 flash attention kernel 并导出 IR
-注意：这是无 batch 和无 multihead 的简化版本
+Use ir_dump library to compile flash attention kernel and dump IR.
+Note: This is a simplified version without batch and multihead support.
 
-使用方法：
+Usage:
     python attention_ir_example.py
 
-生成的 IR 文件将保存在 ./ir_artifacts 目录下：
-    - flash_attention.cutileir: CuTile IR (高级 IR)
-    - flash_attention.cutile: Bytecode (序列化的 IR)
+Generated IR files will be saved in ./ir_artifacts directory:
+    - flash_attention.cutileir: CuTile IR (high-level IR)
+    - flash_attention.cutile: Bytecode (serialized IR)
 """
 
 import sys
+import os
 import cuda.tile as ct
-from ir_dump import CutileIrDump
+from ir_dump import (
+    dump_cutileir,
+    dump_bytecode,
+    create_mock_tensor,
+    save_ir_to_file,
+)
 
 
 @ct.kernel
@@ -62,20 +68,16 @@ def flash_attention_forward_v2(
 
 
 def main():
-    """主函数"""
+    """Main function"""
     print("=" * 60)
-    print("Flash Attention Kernel IR Dump 示例")
+    print("Flash Attention Kernel IR Dump Example")
     print("=" * 60)
 
-    # 创建 IR dumper
-    dumper = CutileIrDump(
-        output_dir="./ir_artifacts",
-        dump_cutileir=True,
-        dump_bytecode=True,
-        dump_mlir=False,
-    )
+    # Define output directory
+    output_dir = "./ir_artifacts"
+    os.makedirs(output_dir, exist_ok=True)
 
-    # 定义参数
+    # Define parameters
     batch_size = 8
     num_head = 16
     seq_len = 1024
@@ -83,25 +85,35 @@ def main():
     Br = 32  # block row size
     Bc = 32  # block col size
 
-    # 创建 mock tensors
-    q = dumper.create_mock_tensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
-    k = dumper.create_mock_tensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
-    v = dumper.create_mock_tensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
-    out = dumper.create_mock_tensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
+    # Create mock tensors
+    q = create_mock_tensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
+    k = create_mock_tensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
+    v = create_mock_tensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
+    out = create_mock_tensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
 
-    # 编译并导出 IR
-    print("\n正在编译 flash attention kernel...")
+    # Compile and dump IR
+    print("\nCompiling flash attention kernel...")
     print(f"  - seq_len: {seq_len}")
     print(f"  - hidden_size: {hidden_size}")
     print(f"  - block size: Br={Br}, Bc={Bc}")
 
-    files = dumper.compile_kernel(
-        flash_attention_forward_v2,
-        args=[q, k, v, out, hidden_size, Br, Bc],
-        kernel_name="flash_attention",
-    )
+    args = [q, k, v, out, hidden_size, Br, Bc]
+    kernel_name = "flash_attention"
 
-    print("\n✓ 编译成功！生成的文件：")
+    # Dump CuTile IR
+    cutileir = dump_cutileir(flash_attention_forward_v2, args)
+    cutileir_path = save_ir_to_file(cutileir, os.path.join(output_dir, f"{kernel_name}.cutileir"))
+
+    # Dump bytecode
+    bytecode = dump_bytecode(flash_attention_forward_v2, args)
+    bytecode_path = save_ir_to_file(bytecode, os.path.join(output_dir, f"{kernel_name}.cutile"), binary=True)
+
+    files = {
+        "cutileir": cutileir_path,
+        "bytecode": bytecode_path,
+    }
+
+    print("\n✓ Compilation successful! Generated files:")
     for ir_type, path in files.items():
         print(f"  - {ir_type}: {path}")
 

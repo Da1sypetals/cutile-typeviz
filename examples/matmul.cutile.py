@@ -29,6 +29,8 @@ def batch_matmul_kernel(A, B, C, tm: ConstInt, tn: ConstInt, tk: ConstInt):
     pidx = ct.bid(1)  # M dimension
     pidy = ct.bid(2)  # N dimension
 
+    rng = ct.arange(64, dtype=ct.uint32).reshape((8, 8))
+
     # Calculate number of K tiles
     # A is (Batch, M, K), so K is axis 2
     # Use A.shape[2] for the total K dimension and ct.cdiv for ceiling division

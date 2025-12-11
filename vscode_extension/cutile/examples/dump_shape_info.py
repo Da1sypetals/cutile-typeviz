@@ -1,7 +1,7 @@
 import json
 import cuda.tile as ct
 from ir_dump.mock_tensor import MockTensor
-from ir_dump.shape_check import typecheck
+from ir_dump.shape_check import get_kernel_shapes_info
 
 ConstInt = ct.Constant[int]
 PAD_ZERO = ct.PaddingMode.ZERO
@@ -31,7 +31,6 @@ FINAL_DW = MockTensor((N,), dtype="float16")
 FINAL_DB = MockTensor((N,), dtype="float16")
 
 
-@typecheck(X, W, B, Y, Mean, Rstd, 1e-5, TILE_N, dump_json=False)
 @ct.kernel
 def layer_norm_fwd(X, W, B, Y, Mean, Rstd, eps, TILE_N: ConstInt):
     """
@@ -93,7 +92,6 @@ def bwd_helper(X, W, DY, bid_m, j, mean, rstd, TILE_N, N):
     return tdy, xhat, wdy
 
 
-@typecheck(DX, DY, DW, DB, X, W, Mean, Rstd, Locks, TILE_N, dump_json=False)
 @ct.kernel
 def layer_norm_bwd_dx_partial_dwdb(DX, DY, DW, DB, X, W, Mean, Rstd, Locks, TILE_N: ConstInt):
     """
@@ -152,7 +150,6 @@ def layer_norm_bwd_dx_partial_dwdb(DX, DY, DW, DB, X, W, Mean, Rstd, Locks, TILE
         ct.atomic_xchg(Locks, group_bid_m, 0, memory_order=ct.MemoryOrder.RELEASE)
 
 
-@typecheck(DW, DB, FINAL_DW, FINAL_DB, TILE_M, TILE_N, dump_json=False)
 @ct.kernel
 def layer_norm_bwd_dwdb(DW, DB, FINAL_DW, FINAL_DB, TILE_M: ConstInt, TILE_N: ConstInt):
     """
@@ -183,6 +180,13 @@ def layer_norm_bwd_dwdb(DW, DB, FINAL_DW, FINAL_DB, TILE_M: ConstInt, TILE_N: Co
 
 
 if __name__ == "__main__":
-    ops = [*layer_norm_fwd(), *layer_norm_bwd_dx_partial_dwdb(), *layer_norm_bwd_dwdb()]
+    # 直接调用 get_kernel_shapes_info 获取形状信息，等同于原来的 typecheck 装饰器功能
+    ops = [
+        *get_kernel_shapes_info(layer_norm_fwd, [X, W, B, Y, Mean, Rstd, 1e-5, TILE_N]),
+        *get_kernel_shapes_info(
+            layer_norm_bwd_dx_partial_dwdb, [DX, DY, DW, DB, X, W, Mean, Rstd, Locks, TILE_N]
+        ),
+        *get_kernel_shapes_info(layer_norm_bwd_dwdb, [DW, DB, FINAL_DW, FINAL_DB, TILE_M, TILE_N]),
+    ]
     ops_str = json.dumps(ops)
     print(ops_str)

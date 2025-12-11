@@ -20,6 +20,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { fileURLToPath } from 'url';
+import { integer } from 'vscode-languageclient';
 
 // 创建连接
 const connection = createConnection(ProposedFeatures.all);
@@ -183,6 +184,12 @@ function callPythonCutileTypecheckAsync(text: string, scriptPath: string, uri: s
                 logError(`Assemble script failed (took ${assembleElapsed}ms): ${error.message}`);
                 if (stderr) logError('stderr:', stderr);
                 runningTasks.set(uri, false);
+
+                // 报告错误给用户
+                const errorMessage = stderr ? `Assemble failed: ${stderr.trim()}` : `Assemble failed: ${error.message}`;
+                hintsCache.set(uri, []);
+                diagnosticsCache.set(uri, [createFileLevelErrorDiagnostic(errorMessage)]);
+                connection.sendDiagnostics({ uri, diagnostics: diagnosticsCache.get(uri) || [] });
                 return;
             }
 
@@ -206,6 +213,12 @@ function callPythonCutileTypecheckAsync(text: string, scriptPath: string, uri: s
                     if (error2) {
                         logError(`Output script failed (took ${outputElapsed}ms): ${error2.message}`);
                         if (stderr2) logError('stderr:', stderr2);
+
+                        // 报告错误给用户
+                        const errorMessage = stderr2 ? `Typecheck failed: ${stderr2.trim()}` : `Typecheck failed: ${error2.message}`;
+                        hintsCache.set(uri, []);
+                        diagnosticsCache.set(uri, [createFileLevelErrorDiagnostic(errorMessage)]);
+                        connection.sendDiagnostics({ uri, diagnostics: diagnosticsCache.get(uri) || [] });
                         return;
                     }
 
@@ -253,6 +266,12 @@ function callPythonCutileTypecheckAsync(text: string, scriptPath: string, uri: s
                         connection.sendDiagnostics({ uri, diagnostics: diagnosticsCache.get(uri) || [] });
                     } catch (parseError: any) {
                         logError(`Failed to parse typecheck result: ${parseError.message}`);
+
+                        // 报告错误给用户
+                        const errorMessage = `Failed to parse typecheck result: ${parseError.message}`;
+                        hintsCache.set(uri, []);
+                        diagnosticsCache.set(uri, [createFileLevelErrorDiagnostic(errorMessage)]);
+                        connection.sendDiagnostics({ uri, diagnostics: diagnosticsCache.get(uri) || [] });
                     }
                 }
             );
@@ -282,6 +301,20 @@ function createDiagnosticsFromTileError(errorInfo: TileErrorInfo, document: Text
 
     diagnostics.push(diagnostic);
     return diagnostics;
+}
+
+/**
+ * 创建文件级别的错误诊断（当 Python 执行失败时）
+ * 错误会显示在文件第一行
+ */
+function createFileLevelErrorDiagnostic(message: string): Diagnostic {
+    return {
+        severity: DiagnosticSeverity.Error,
+        // 显示在整个文件（第一行到最大行），整数
+        range: Range.create(0, 0, 2147483647, 2147483647),
+        message: message,
+        source: 'cuTile-typeviz'
+    };
 }
 
 /**
