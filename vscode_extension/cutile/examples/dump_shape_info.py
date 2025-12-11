@@ -1,7 +1,8 @@
 import json
 import cuda.tile as ct
 from ir_dump.mock_tensor import MockTensor
-from ir_dump.shape_check import get_kernel_shapes_info
+from typecheck.shape_check import get_kernel_shapes_info
+
 
 ConstInt = ct.Constant[int]
 PAD_ZERO = ct.PaddingMode.ZERO

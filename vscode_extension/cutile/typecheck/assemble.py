@@ -13,7 +13,7 @@ head = """
 import json
 import traceback
 from ir_dump.mock_tensor import MockTensor
-from ir_dump.shape_check import get_kernel_shapes_info
+from typecheck.shape_check import get_kernel_shapes_info
 from pathlib import Path
 from cuda.tile._exception import TileError, Loc
 

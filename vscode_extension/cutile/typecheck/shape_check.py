@@ -16,26 +16,6 @@ from enum import StrEnum
 from functools import wraps
 
 
-def typecheck(*kernel_args, dump_json: bool = True):
-    def decorator(kernel):
-        @wraps(kernel)
-        def wrapper(*args, **kwargs):
-            ops = get_kernel_shapes_info(
-                kernel_func=kernel,
-                args=[*kernel_args],
-            )
-            if dump_json:
-                import json
-
-                return json.dumps(ops)
-            else:
-                return ops
-
-        return wrapper
-
-    return decorator
-
-
 def get_kernel_shapes_info(kernel_func: cutile_kernel, args: list) -> list[Operation]:
     useful_ops = _get_ops_for_shapes_info(kernel_func, args)
     assignment_ops_list = [
