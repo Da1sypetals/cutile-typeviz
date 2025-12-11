@@ -180,6 +180,8 @@ def layer_norm_bwd_dwdb(DW, DB, FINAL_DW, FINAL_DB, TILE_M: ConstInt, TILE_N: Co
 
 
 if __name__ == "__main__":
+    import os
+
     # 直接调用 get_kernel_shapes_info 获取形状信息，等同于原来的 typecheck 装饰器功能
     ops = [
         *get_kernel_shapes_info(layer_norm_fwd, [X, W, B, Y, Mean, Rstd, 1e-5, TILE_N]),
@@ -188,5 +190,10 @@ if __name__ == "__main__":
         ),
         *get_kernel_shapes_info(layer_norm_bwd_dwdb, [DW, DB, FINAL_DW, FINAL_DB, TILE_M, TILE_N]),
     ]
-    ops_str = json.dumps(ops)
-    print(ops_str)
+
+    dump_path = os.path.join("ir_artifacts", "shape_info.json")
+
+    with open(dump_path, "w") as f:
+        json.dump(ops, f, indent=4)
+
+    print(f"Dumped shape info to {dump_path}")

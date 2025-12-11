@@ -16,12 +16,6 @@ Generated IR files will be saved in ./ir_artifacts directory:
 import sys
 import os
 import cuda.tile as ct
-from ir_dump import (
-    dump_cutileir,
-    dump_bytecode,
-    create_mock_tensor,
-    save_ir_to_file,
-)
 
 
 @ct.kernel
@@ -68,6 +62,14 @@ def flash_attention_forward_v2(
 
 
 def main():
+    from ir_dump import (
+        dump_cutileir,
+        dump_bytecode,
+        dump_typechecked_ir,
+        get_function_repr,
+        MockTensor,
+    )
+
     """Main function"""
     print("=" * 60)
     print("Flash Attention Kernel IR Dump Example")
@@ -86,10 +88,10 @@ def main():
     Bc = 32  # block col size
 
     # Create mock tensors
-    q = create_mock_tensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
-    k = create_mock_tensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
-    v = create_mock_tensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
-    out = create_mock_tensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
+    q = MockTensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
+    k = MockTensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
+    v = MockTensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
+    out = MockTensor((batch_size, num_head, seq_len, hidden_size), dtype="float32")
 
     # Compile and dump IR
     print("\nCompiling flash attention kernel...")
@@ -102,20 +104,34 @@ def main():
 
     # Dump CuTile IR
     cutileir = dump_cutileir(flash_attention_forward_v2, args)
-    cutileir_path = save_ir_to_file(cutileir, os.path.join(output_dir, f"{kernel_name}.cutileir"))
+    cutileir_path = os.path.join(output_dir, f"{kernel_name}.cutileir")
+    with open(cutileir_path, "w") as f:
+        f.write(cutileir)
 
     # Dump bytecode
     bytecode = dump_bytecode(flash_attention_forward_v2, args)
-    bytecode_path = save_ir_to_file(bytecode, os.path.join(output_dir, f"{kernel_name}.cutile"), binary=True)
+    bytecode_path = os.path.join(output_dir, f"{kernel_name}.cutile")
+    with open(bytecode_path, "wb") as f:
+        f.write(bytes.fromhex(bytecode))
+
+    # Dump typechecked IR
+    typechecked_ir = dump_typechecked_ir(flash_attention_forward_v2, args)
+    typechecked_ir_path = os.path.join(output_dir, f"{kernel_name}.typechecked_ir")
+    with open(typechecked_ir_path, "w") as f:
+        f.write(typechecked_ir)
 
     files = {
         "cutileir": cutileir_path,
         "bytecode": bytecode_path,
+        "typechecked_ir": typechecked_ir_path,
     }
 
-    print("\n✓ Compilation successful! Generated files:")
+    print("Generated files:")
     for ir_type, path in files.items():
         print(f"  - {ir_type}: {path}")
+
+    func_ir = get_function_repr(flash_attention_forward_v2, args)
+    print(f"\n`get_function_repr` returns func_ir of type:\n{type(func_ir)}")
 
 
 if __name__ == "__main__":
