@@ -57,11 +57,8 @@ function logError(message: string, ...args: any[]): void {
     console.error(`[${getTimestamp()}] ERROR: ${message}`, ...args);
 }
 
-// const CUTILE_SRC_PATH = "/Users/daisy/develop/cutile-python/src";
-// const PYTHON_EXECUTABLE = "/Users/daisy/miniconda3/bin/python";
-
-// TODO: use current selected python interpreter
-const PYTHON_EXECUTABLE = "/root/miniconda3/bin/python";
+// Python 解释器路径（从客户端获取，如果未设置则不提供 hints）
+let pythonExecutable: string | undefined = undefined;
 
 const CACHE_DIR_NAME = ".cutile-typeviz";
 const CUTILE_SRC_PATH = path.join(__dirname, '..', '..', 'cutile');
@@ -105,12 +102,18 @@ interface PythonResult {
  * 
  * @param text The text content to analyze
  * @param scriptPath The Python script path to run (the file being monitored)
- * @returns JSON result output from Python script
+ * @returns JSON result output from Python script, or null if no Python interpreter
  */
-function callPythonCutileTypecheckSync(text: string, scriptPath: string): PythonResult {
+function callPythonCutileTypecheckSync(text: string, scriptPath: string): PythonResult | null {
+    // 检查是否有 Python 解释器
+    if (!pythonExecutable) {
+        log('No Python interpreter configured, skipping typecheck');
+        return null;
+    }
+
     // 第一步：执行 assemble.py 脚本处理输入
     const assembleScriptFullPath = ASSEMBLE_SCRIPT_PATH;
-    execSync(`PYTHONPATH=${CUTILE_SRC_PATH} ${PYTHON_EXECUTABLE} "${assembleScriptFullPath}" -f "${scriptPath}"`, {
+    execSync(`PYTHONPATH=${CUTILE_SRC_PATH} ${pythonExecutable} "${assembleScriptFullPath}" -f "${scriptPath}"`, {
         input: text,
         encoding: 'utf-8',
         maxBuffer: 10 * 1024 * 1024, // 10MB buffer
@@ -118,7 +121,7 @@ function callPythonCutileTypecheckSync(text: string, scriptPath: string): Python
     });
 
     // 第二步：执行 OUTPUT_PATH 文件获取最终结果
-    execSync(`PYTHONPATH=${CUTILE_SRC_PATH} ${PYTHON_EXECUTABLE} "${OUTPUT_PATH}"`, {
+    execSync(`PYTHONPATH=${CUTILE_SRC_PATH} ${pythonExecutable} "${OUTPUT_PATH}"`, {
         encoding: 'utf-8',
         maxBuffer: 10 * 1024 * 1024, // 10MB buffer
         timeout: 30000 // 30 seconds
@@ -140,6 +143,16 @@ function callPythonCutileTypecheckSync(text: string, scriptPath: string): Python
  * @param uri The document URI for cache key
  */
 function callPythonCutileTypecheckAsync(text: string, scriptPath: string, uri: string): void {
+    // 检查是否有 Python 解释器
+    if (!pythonExecutable) {
+        log('No Python interpreter configured, skipping typecheck');
+        // 清空缓存和诊断
+        hintsCache.set(uri, []);
+        diagnosticsCache.set(uri, []);
+        connection.sendDiagnostics({ uri, diagnostics: [] });
+        return;
+    }
+
     // 如果该文件已有正在运行的任务，不重复启动
     if (runningTasks.get(uri)) {
         log(`Python task already running for ${uri}, skipping`);
@@ -155,7 +168,7 @@ function callPythonCutileTypecheckAsync(text: string, scriptPath: string, uri: s
     // 第一步：异步执行 assemble.py 脚本处理输入
     const assembleStartTime = Date.now();
     const assembleProcess = exec(
-        `PYTHONPATH=${CUTILE_SRC_PATH} ${PYTHON_EXECUTABLE} "${assembleScriptFullPath}" -f "${scriptPath}"`,
+        `PYTHONPATH=${CUTILE_SRC_PATH} ${pythonExecutable} "${assembleScriptFullPath}" -f "${scriptPath}"`,
         {
             encoding: 'utf-8',
             maxBuffer: 10 * 1024 * 1024, // 10MB buffer
@@ -177,7 +190,7 @@ function callPythonCutileTypecheckAsync(text: string, scriptPath: string, uri: s
             // 第二步：异步执行 OUTPUT_PATH 文件获取最终结果
             const outputStartTime = Date.now();
             exec(
-                `PYTHONPATH=${CUTILE_SRC_PATH} ${PYTHON_EXECUTABLE} "${OUTPUT_PATH}"`,
+                `PYTHONPATH=${CUTILE_SRC_PATH} ${pythonExecutable} "${OUTPUT_PATH}"`,
                 {
                     encoding: 'utf-8',
                     maxBuffer: 10 * 1024 * 1024, // 10MB buffer
@@ -297,6 +310,15 @@ function createRangeFromErrorInfo(errorInfo: TileErrorInfo, document: TextDocume
 connection.onInitialize((params: InitializeParams): InitializeResult => {
     log('LSP Server initializing...');
 
+    // 从初始化参数中获取 Python 解释器路径
+    const initOptions = params.initializationOptions;
+    if (initOptions && initOptions.pythonPath) {
+        pythonExecutable = initOptions.pythonPath;
+        log(`Python interpreter set to: ${pythonExecutable}`);
+    } else {
+        log('No Python interpreter provided, hints will be disabled');
+    }
+
     return {
         capabilities: {
             // 文档同步方式：完整同步
@@ -316,6 +338,32 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
 // 初始化完成
 connection.onInitialized(() => {
     log('LSP Server initialized');
+});
+
+// 监听 Python 解释器路径变化的自定义通知
+connection.onNotification('cutile/pythonPathChanged', (params: { pythonPath: string | undefined }) => {
+    const oldPath = pythonExecutable;
+    pythonExecutable = params.pythonPath;
+    log(`Python interpreter changed: ${oldPath} -> ${pythonExecutable}`);
+
+    // 如果有新的解释器，触发所有打开文档的刷新
+    if (pythonExecutable) {
+        documents.all().forEach(doc => {
+            const filePath = fileURLToPath(doc.uri);
+            if (filePath.endsWith('.cutile.py')) {
+                log(`Refreshing hints for ${doc.uri} due to interpreter change`);
+                callPythonCutileTypecheckAsync(doc.getText(), filePath, doc.uri);
+            }
+        });
+    } else {
+        // 如果解释器被清除，清空所有缓存
+        hintsCache.clear();
+        diagnosticsCache.clear();
+        documents.all().forEach(doc => {
+            connection.sendDiagnostics({ uri: doc.uri, diagnostics: [] });
+        });
+        connection.languages.inlayHint.refresh();
+    }
 });
 
 // Inlay Hint 请求处理
