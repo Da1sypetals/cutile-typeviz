@@ -76,6 +76,7 @@ def bwd_helper(X, W, DY, bid_m, j, mean, rstd, TILE_N, N):
     tdy = ct.load(DY, index=(bid_m, j), shape=(1, TILE_N), padding_mode=PAD_ZERO)
     xhat = (tx - mean) * rstd
     wdy = tw * tdy
+    z = wdy.reshape((32, 32))
     mask = j * TILE_N + ct.arange(TILE_N, dtype=ct.int32) < N
     xhat = ct.where(mask, xhat, 0)
     wdy = ct.where(mask, wdy, 0)

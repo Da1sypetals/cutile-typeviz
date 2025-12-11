@@ -5,7 +5,6 @@ import {
     LanguageClient,
     LanguageClientOptions,
     ServerOptions,
-    TransportKind
 } from 'vscode-languageclient/node';
 
 let client: LanguageClient;
@@ -49,25 +48,41 @@ async function getPythonInterpreterPath(): Promise<string | undefined> {
 }
 
 export async function activate(context: ExtensionContext) {
-    // LSP Server 模块的路径
-    const serverModule = context.asAbsolutePath(
-        path.join('server', 'out', 'server.js')
-    );
-
     // 获取 Python 解释器路径
     const pythonPath = await getPythonInterpreterPath();
 
-    // 服务器选项
+    // 如果没有 Python 解释器，使用默认的 python 命令
+    const pythonExecutable = pythonPath || 'python';
+
+    // Python LSP Server 模块的路径
+    const serverModule = context.asAbsolutePath(
+        path.join('server_py', 'server.py')
+    );
+
+    console.log(`Using Python interpreter: ${pythonExecutable}`);
+    console.log(`Server module path: ${serverModule}`);
+
+    // 服务器选项 - 使用 Python 进程
     const serverOptions: ServerOptions = {
         run: {
-            module: serverModule,
-            transport: TransportKind.ipc
+            command: pythonExecutable,
+            args: [serverModule],
+            options: {
+                env: {
+                    ...process.env,
+                    // 可以在这里添加额外的环境变量
+                }
+            }
         },
         debug: {
-            module: serverModule,
-            transport: TransportKind.ipc,
+            command: pythonExecutable,
+            args: [serverModule],
             options: {
-                execArgv: ['--nolazy', '--inspect=6009']
+                env: {
+                    ...process.env,
+                    // 调试时可以启用更详细的日志
+                    PYGLS_DEBUG: '1'
+                }
             }
         }
     };
@@ -101,7 +116,7 @@ export async function activate(context: ExtensionContext) {
     // 注册 Python 解释器变化监听器
     await registerPythonInterpreterChangeListener(context);
 
-    console.log('cuTile typeviz 扩展已激活');
+    console.log('cuTile typeviz 扩展已激活 (Python backend)');
 }
 
 /**

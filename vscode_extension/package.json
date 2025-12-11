@@ -33,7 +33,7 @@
         "compile": "tsc -b",
         "watch": "tsc -b -w",
         "lint": "eslint ./src --ext .ts,.tsx",
-        "postinstall": "cd server && npm install && cd .."
+        "install-server": "pip install -r server_py/requirements.txt"
     },
     "devDependencies": {
         "@types/node": "^18.0.0",
