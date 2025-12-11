@@ -1,0 +1,13 @@
+[project]
+name = "cutile-typeviz"
+dynamic = ["version"]
+description = "Provide cuTile type hints"
+readme = { file = "README.md", content-type = "text/markdown" }
+authors = [{ name = "Da1sypetals" }]
+license = "Apache-2.0"
+license-files = ["LICENSE.md"]
+requires-python = ">=3.10, <3.14"
+
+classifiers = ["Intended Audience :: Developers"]
+
+dependencies = ["typing-extensions"]

@@ -1,18 +1,19 @@
-# cuTile 类型提示
+# cuTile-typeviz: cuTile Type Hints
 
-## 构建
+## Build
 ```sh
 bash build_ext.sh
 ```
 
 
-## 使用
+## Usage
 
-- 激活extension
-- 将文件后缀改为`.cutile.py`
-- 参照`vscode_extension/cutile/matmul.cutile.py`, 在cutile kernel的docstring开头标识kernel所使用的参数
+- Activate the extension
+- Choose a python interpreter in `ms-python` extension. `typing-extensions` should be installed in its environment
+- Change the file extension to `.cutile.py`
+- Refer to `vscode_extension/cutile/matmul.cutile.py` to mark the parameters used by the kernel at the beginning of the cutile kernel's docstring with `<typecheck>` tags
 
 ## TODO
 
-- 除了tile error之外，其他错误应该导致插件崩溃
-- 行数超过原文件行数的hint和diagnostic不显示（如果是end line超过了，那就只显示到最后一行的最后一个字符）
+- Errors other than tile errors should cause the plugin to crash
+- Hints and diagnostics for lines exceeding the original file's line count should not be displayed (if the end line exceeds the limit, only display up to the last character of the last line)
