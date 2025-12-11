@@ -58,10 +58,10 @@ def parse_typecheck_params(docstring: str):
     if TYPECHECK_START not in docstring or TYPECHECK_END not in docstring:
         raise ValueError("Input args is not annotated. Typecheck will not be performed.")
     # Split by <typecheck> and get the last part
-    after_typecheck = docstring.split(TYPECHECK_START)[-1]
+    after_typecheck = docstring.split(TYPECHECK_START, 1)[-1]
 
     # Split by </typecheck> and get the first part
-    before_close = after_typecheck.split(TYPECHECK_END)[0]
+    before_close = after_typecheck.rsplit(TYPECHECK_END, 1)[0]
 
     # Trim whitespace from the extracted content
     trimmed_content = before_close.strip()
