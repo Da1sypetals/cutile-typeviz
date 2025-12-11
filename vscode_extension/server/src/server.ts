@@ -60,6 +60,7 @@ function logError(message: string, ...args: any[]): void {
 // Python 解释器路径（从客户端获取，如果未设置则不提供 hints）
 let pythonExecutable: string | undefined = undefined;
 
+const RECOGNIZED_EXTENSION = ".cutile.py";
 const CACHE_DIR_NAME = ".cutile-typeviz";
 const CUTILE_SRC_PATH = path.join(__dirname, '..', '..', 'cutile');
 const ASSEMBLE_SCRIPT_PATH = path.join(CUTILE_SRC_PATH, "typecheck", "assemble.py");
@@ -350,7 +351,7 @@ connection.onNotification('cutile/pythonPathChanged', (params: { pythonPath: str
     if (pythonExecutable) {
         documents.all().forEach(doc => {
             const filePath = fileURLToPath(doc.uri);
-            if (filePath.endsWith('.cutile.py')) {
+            if (filePath.endsWith(RECOGNIZED_EXTENSION)) {
                 log(`Refreshing hints for ${doc.uri} due to interpreter change`);
                 callPythonCutileTypecheckAsync(doc.getText(), filePath, doc.uri);
             }
@@ -376,8 +377,8 @@ connection.languages.inlayHint.on((params: InlayHintParams): InlayHint[] => {
     // 将 URI 转换为文件路径（这就是正在监控的文件）
     const filePath = fileURLToPath(params.textDocument.uri);
 
-    // 只为 .cutile.py 扩展名的文件提供 Inlay Hints
-    if (!filePath.endsWith('.cutile.py')) {
+    // 只为 RECOGNIZED_EXTENSION 扩展名的文件提供 Inlay Hints
+    if (!filePath.endsWith(RECOGNIZED_EXTENSION)) {
         return [];
     }
 
@@ -471,8 +472,8 @@ function handleDocumentChange(document: TextDocument, eventName: string): void {
     const uri = document.uri;
     const filePath = fileURLToPath(uri);
 
-    // 只为 .cutile.py 扩展名的文件触发刷新
-    if (!filePath.endsWith('.cutile.py')) {
+    // 只为 RECOGNIZED_EXTENSION 扩展名的文件触发刷新
+    if (!filePath.endsWith(RECOGNIZED_EXTENSION)) {
         return;
     }
 
