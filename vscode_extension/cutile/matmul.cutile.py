@@ -58,7 +58,7 @@ def batch_matmul_kernel(A, B, C, tm: ConstInt, tn: ConstInt, tk: ConstInt):
         )
         b = ct.reshape(b, (tk, tn))  # Reshape to 2D for ct.mma
 
-        z = ct.reshape(b, (2, 4, 128, 2, 2, 2))
+        col = ct.extract(b, index=(0, 0), shape=(1, 64))
 
         accumulator = ct.mma(a, b, acc=accumulator)
 
