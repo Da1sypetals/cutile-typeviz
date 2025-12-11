@@ -263,7 +263,7 @@ function createDiagnosticsFromTileError(errorInfo: TileErrorInfo, document: Text
         severity: DiagnosticSeverity.Error,
         range: createRangeFromErrorInfo(errorInfo, document),
         message: errorInfo.message,
-        source: 'cuTile'
+        source: 'cuTile-typeviz'
     };
 
     diagnostics.push(diagnostic);
@@ -275,15 +275,15 @@ function createDiagnosticsFromTileError(errorInfo: TileErrorInfo, document: Text
  */
 function createRangeFromErrorInfo(errorInfo: TileErrorInfo, document: TextDocument): Range {
     const line = Math.max(0, errorInfo.line - 1); // 转换为0-based索引
-    const col = Math.max(0, errorInfo.col - 1);   // 转换为0-based索引
+    const col = Math.max(0, errorInfo.col);   // col需要的是 1-based索引
 
     let endLine = line;
     let endCol = col;
 
     // 如果有结束位置信息，使用它
     if (errorInfo.last_line !== undefined && errorInfo.end_col !== undefined) {
-        endLine = Math.max(0, errorInfo.last_line - 1);
-        endCol = Math.max(0, errorInfo.end_col - 1);
+        endLine = Math.max(0, errorInfo.last_line - 1); // 转换为0-based索引
+        endCol = Math.max(0, errorInfo.end_col); // col需要的是 1-based索引
     } else {
         // 如果没有结束位置，使用行的末尾
         const lineText = document.getText(Range.create(line, 0, line + 1, 0));
