@@ -103,7 +103,7 @@ def dump_bytecode(
     args: list,
     compute_capability: tuple[int, int] | None = None,
     as_hex: bool = True,
-) -> str:
+) -> bytes:
     """
     Compile kernel and return the bytecode.
 
@@ -129,6 +129,4 @@ def dump_bytecode(
     with bc.write_bytecode(num_functions=1, buf=bytecode_buf) as writer:
         bytecode_generator(writer, anonymize_debug_attr=False)
 
-    if as_hex:
-        return bytecode_buf.hex()
-    return bytes(bytecode_buf).decode("latin-1")
+    return bytes(bytecode_buf)

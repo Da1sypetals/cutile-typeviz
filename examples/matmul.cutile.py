@@ -60,8 +60,6 @@ def batch_matmul_kernel(A, B, C, tm: ConstInt, tn: ConstInt, tk: ConstInt):
         )
         b = ct.reshape(b, (tk, tn))  # Reshape to 2D for ct.mma
 
-        col = ct.extract(b, index=(0, 0), shape=(1, 64))
-
         accumulator = ct.mma(a, b, acc=accumulator)
 
     # Convert to output dtype and store

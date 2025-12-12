@@ -54,19 +54,13 @@ export async function activate(context: ExtensionContext) {
     // 如果没有 Python 解释器，使用默认的 python 命令
     const pythonExecutable = pythonPath || 'python';
 
-    // Python LSP Server 模块的路径
-    const serverModule = context.asAbsolutePath(
-        path.join('server_py', 'server.py')
-    );
-
     console.log(`Using Python interpreter: ${pythonExecutable}`);
-    console.log(`Server module path: ${serverModule}`);
 
-    // 服务器选项 - 使用 Python 进程
+    // 服务器选项 - 使用 Python 模块方式启动
     const serverOptions: ServerOptions = {
         run: {
             command: pythonExecutable,
-            args: [serverModule],
+            args: ['-m', 'cutile_typeviz'],
             options: {
                 env: {
                     ...process.env,
@@ -76,7 +70,7 @@ export async function activate(context: ExtensionContext) {
         },
         debug: {
             command: pythonExecutable,
-            args: [serverModule],
+            args: ['-m', 'cutile_typeviz'],
             options: {
                 env: {
                     ...process.env,
@@ -116,7 +110,7 @@ export async function activate(context: ExtensionContext) {
     // 注册 Python 解释器变化监听器
     await registerPythonInterpreterChangeListener(context);
 
-    console.log('cuTile typeviz 扩展已激活 (Python backend)');
+    console.log('cutile-typeviz extension activated');
 }
 
 /**

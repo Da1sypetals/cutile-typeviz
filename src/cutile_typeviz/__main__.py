@@ -18,12 +18,11 @@ from pygls.workspace import TextDocument
 # ============================================================
 
 RECOGNIZED_EXTENSION = ".cutile.py"
-CACHE_DIR_NAME = ".cutile-typeviz"
-# 服务器脚本所在目录（server_py 目录）
-SERVER_DIR = Path(__file__).parent
-# cutile 源码目录（与 server_py 同级）
-CUTILE_SRC_PATH = SERVER_DIR.parent / "cutile"
+CUTILE_TYPEVIZ_DIR = Path(__file__).parent
+CUTILE_SRC_PATH = CUTILE_TYPEVIZ_DIR / "cutile"
 ASSEMBLE_SCRIPT_PATH = CUTILE_SRC_PATH / "typecheck" / "assemble.py"
+
+CACHE_DIR_NAME = ".cutile-typeviz"
 OUTPUT_PATH = Path.home() / CACHE_DIR_NAME / "main.py"
 TYPECHECK_INFO_PATH = Path.home() / CACHE_DIR_NAME / "typecheck.json"
 
@@ -708,7 +707,7 @@ def on_did_close(params: types.DidCloseTextDocumentParams) -> None:
 
 def main():
     """主入口函数"""
-    logger.info("cuTile typeviz Server started (Python backend)")
+    logger.info(f"cuTile typeviz Server started from {__file__}")
     server.start_io()
 
 
