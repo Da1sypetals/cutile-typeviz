@@ -112,7 +112,7 @@ def main():
     bytecode = dump_bytecode(flash_attention_forward_v2, args)
     bytecode_path = os.path.join(output_dir, f"{kernel_name}.cutile")
     with open(bytecode_path, "wb") as f:
-        f.write(bytes.fromhex(bytecode))
+        f.write(bytecode)
 
     # Dump typechecked IR
     typechecked_ir = dump_typechecked_ir(flash_attention_forward_v2, args)

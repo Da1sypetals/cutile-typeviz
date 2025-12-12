@@ -102,7 +102,6 @@ def dump_bytecode(
     kernel_func,
     args: list,
     compute_capability: tuple[int, int] | None = None,
-    as_hex: bool = True,
 ) -> bytes:
     """
     Compile kernel and return the bytecode.
