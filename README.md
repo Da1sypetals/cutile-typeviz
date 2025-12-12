@@ -1,4 +1,4 @@
-# cuTile-typeviz: cuTile Type Hints
+# cutile_typeviz: cuTile Type Hints
 
 ## Build
 

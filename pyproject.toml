@@ -1,5 +1,5 @@
 [project]
-name = "cutile-typeviz"
+name = "cutile_typeviz"
 dynamic = ["version"]
 description = "Provide cuTile type hints"
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -13,9 +13,9 @@ classifiers = ["Intended Audience :: Developers"]
 dependencies = ["typing-extensions", "pygls>=2.0.0", "lsprotocol>=2025.0.0"]
 
 [project.scripts]
-cutile-typeviz = "cutile_typeviz.__main__:main"
+cutile_typeviz = "cutile_typeviz.__main__:main"
 
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py313"

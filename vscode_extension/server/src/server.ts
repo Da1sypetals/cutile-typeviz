@@ -62,7 +62,7 @@ function logError(message: string, ...args: any[]): void {
 let pythonExecutable: string | undefined = undefined;
 
 const RECOGNIZED_EXTENSION = ".cutile.py";
-const CACHE_DIR_NAME = ".cutile-typeviz";
+const CACHE_DIR_NAME = ".cutile_typeviz";
 const CUTILE_SRC_PATH = path.join(__dirname, '..', '..', 'cutile');
 const ASSEMBLE_SCRIPT_PATH = path.join(CUTILE_SRC_PATH, "typecheck", "assemble.py");
 const OUTPUT_PATH = path.join(os.homedir(), CACHE_DIR_NAME, "main.py");
@@ -296,7 +296,7 @@ function createDiagnosticsFromTileError(errorInfo: TileErrorInfo, document: Text
         severity: DiagnosticSeverity.Error,
         range: createRangeFromErrorInfo(errorInfo, document),
         message: errorInfo.message,
-        source: 'cuTile-typeviz'
+        source: 'cutile_typeviz'
     };
 
     diagnostics.push(diagnostic);
@@ -313,7 +313,7 @@ function createFileLevelErrorDiagnostic(message: string): Diagnostic {
         // 显示在整个文件（第一行到最大行），整数
         range: Range.create(0, 0, 2147483647, 2147483647),
         message: message,
-        source: 'cuTile-typeviz'
+        source: 'cutile_typeviz'
     };
 }
 

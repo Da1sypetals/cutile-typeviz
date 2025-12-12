@@ -1,4 +1,4 @@
-# cuTile-typeviz
+# cutile_typeviz
 
 ## 运行
 

@@ -22,7 +22,7 @@ CUTILE_TYPEVIZ_DIR = Path(__file__).parent
 CUTILE_SRC_PATH = CUTILE_TYPEVIZ_DIR / "cutile"
 ASSEMBLE_SCRIPT_PATH = CUTILE_SRC_PATH / "typecheck" / "assemble.py"
 
-CACHE_DIR_NAME = ".cutile-typeviz"
+CACHE_DIR_NAME = ".cutile_typeviz"
 OUTPUT_PATH = Path.home() / CACHE_DIR_NAME / "main.py"
 TYPECHECK_INFO_PATH = Path.home() / CACHE_DIR_NAME / "typecheck.json"
 
@@ -96,7 +96,7 @@ class PythonResult:
 
 def setup_logger() -> logging.Logger:
     """配置并返回日志记录器"""
-    logger = logging.getLogger("cutile-typeviz")
+    logger = logging.getLogger("cutile_typeviz")
     logger.setLevel(logging.DEBUG)
 
     # 创建 stderr 处理器
@@ -151,7 +151,7 @@ class CuTileLSPServer(LanguageServer):
 
 
 # 创建服务器实例
-server = CuTileLSPServer(name="cutile-typeviz", version="1.0.0")
+server = CuTileLSPServer(name="cutile_typeviz", version="1.0.0")
 
 
 # ============================================================
@@ -169,7 +169,7 @@ def create_diagnostics_from_tile_error(
         severity=types.DiagnosticSeverity.Error,
         range=create_range_from_error_info(error_info, document),
         message=error_info.message,
-        source="cuTile-typeviz",
+        source="cutile_typeviz",
     )
 
     diagnostics.append(diagnostic)
@@ -189,7 +189,7 @@ def create_file_level_error_diagnostic(message: str) -> types.Diagnostic:
             end=types.Position(line=2147483647, character=2147483647),
         ),
         message=message,
-        source="cuTile-typeviz",
+        source="cutile_typeviz",
     )
 
 
@@ -534,7 +534,7 @@ def on_initialize(params: types.InitializeParams) -> types.InitializeResult:
             inlay_hint_provider=True,
             # 启用诊断功能
             diagnostic_provider=types.DiagnosticOptions(
-                identifier="cutile-typeviz", inter_file_dependencies=False, workspace_diagnostics=False
+                identifier="cutile_typeviz", inter_file_dependencies=False, workspace_diagnostics=False
             ),
         )
     )

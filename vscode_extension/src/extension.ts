@@ -110,7 +110,7 @@ export async function activate(context: ExtensionContext) {
     // 注册 Python 解释器变化监听器
     await registerPythonInterpreterChangeListener(context);
 
-    console.log('cutile-typeviz extension activated');
+    console.log('cutile_typeviz extension activated');
 }
 
 /**

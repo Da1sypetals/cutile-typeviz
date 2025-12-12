@@ -1,5 +1,5 @@
 {
-    "name": "cutile-typeviz-server",
+    "name": "cutile_typeviz-server",
     "version": "1.0.0",
     "description": "LSP Server for cuTile typeviz",
     "main": "out/server.js",

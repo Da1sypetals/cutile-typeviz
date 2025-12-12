@@ -5,7 +5,7 @@ from pathlib import Path
 from dataclasses import dataclass
 import textwrap
 
-CACHE_DIR_NAME = ".cutile-typeviz"
+CACHE_DIR_NAME = ".cutile_typeviz"
 TYPECHECK_INFO_FILENAME = "typecheck.json"
 TYPECHECK_INFO_PATH = Path.home() / CACHE_DIR_NAME / TYPECHECK_INFO_FILENAME
 
