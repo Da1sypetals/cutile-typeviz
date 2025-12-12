@@ -19,7 +19,7 @@ from pygls.workspace import TextDocument
 
 RECOGNIZED_EXTENSION = ".cutile.py"
 CUTILE_TYPEVIZ_DIR = Path(__file__).parent
-CUTILE_SRC_PATH = CUTILE_TYPEVIZ_DIR / "cutile"
+CUTILE_SRC_PATH = CUTILE_TYPEVIZ_DIR / "cutile_utils"
 ASSEMBLE_SCRIPT_PATH = CUTILE_SRC_PATH / "typecheck" / "assemble.py"
 
 CACHE_DIR_NAME = ".cutile_typeviz"
