@@ -1,8 +1,0 @@
-# cuTile typeviz LSP Server Dependencies
-# Python 3.9+ required
-
-# LSP server framework (pygls v2)
-pygls>=2.0.0
-
-# LSP protocol types
-lsprotocol>=2025.0.0
