@@ -69,6 +69,7 @@ def layer_norm_fwd(X, W, B, Y, Mean, Rstd, eps, TILE_N: ConstInt):
         ct.store(Y, index=(bid_m, j), tile=ty.astype(Y.dtype))
 
 
+@ct.function(tile=True)
 def bwd_helper(X, W, DY, bid_m, j, mean, rstd, TILE_N, N):
     """Helper to load data and compute common backward terms."""
     tx = ct.load(X, index=(bid_m, j), shape=(1, TILE_N), padding_mode=PAD_ZERO)
