@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 from dataclasses import dataclass
 import textwrap
+import inspect
 
 CACHE_DIR_NAME = ".cutile_typeviz"
 TYPECHECK_INFO_FILENAME = "typecheck.json"
@@ -17,12 +18,14 @@ from typecheck.shape_check import get_kernel_shapes_info
 from pathlib import Path
 from cuda.tile._exception import TileError, Loc
 
-ops = []
+hints = []
+diagnostics = []
 """
 
 tail = f"""
 # 序列化结果，只包含必要的字段
-result = {{"success": True, "content": ops}}
+result["hints"] = hints
+result["diagnostics"] = diagnostics
 result_str = json.dumps(result)
 typecheck_info_path = Path("{TYPECHECK_INFO_PATH}").resolve()
 typecheck_info_path.write_text(result_str)
@@ -41,7 +44,7 @@ def space(n: int):
     return " " * n
 
 
-def parse_typecheck_params(docstring: str):
+def parse_typecheck_params(docstring: str | None):
     """
     Process a string by:
     1. Splitting by '<typecheck>' and taking the last part
@@ -55,7 +58,7 @@ def parse_typecheck_params(docstring: str):
     Returns:
         list: List of whitespace-trimmed lines from the extracted content
     """
-    if TYPECHECK_START not in docstring or TYPECHECK_END not in docstring:
+    if docstring is None or TYPECHECK_START not in docstring or TYPECHECK_END not in docstring:
         raise ValueError("Input args is not annotated. Typecheck will not be performed.")
     # Split by <typecheck> and get the last part
     after_typecheck = docstring.split(TYPECHECK_START, 1)[-1]
@@ -100,10 +103,9 @@ try:
         kernel_func={kernel.name},
         args=[{args}],
     )
-    ops.extend({ops_name})
+    hints.extend({ops_name})
 except TileError as e:
-    # 如果遇到TileError，设置失败标志并序列化错误信息
-    result["success"] = False
+    # 如果遇到TileError，添加诊断信息
     
     # 序列化Loc信息，只包含必要的字段
     loc_info = {{
@@ -120,11 +122,7 @@ except TileError as e:
     if e.loc.filename is not None:
         loc_info["filename"] = e.loc.filename
     
-    result["content"] = loc_info
-    content_json = json.dumps(result)
-    typecheck_info_path = Path("{TYPECHECK_INFO_PATH}").resolve()
-    typecheck_info_path.write_text(content_json)
-    return
+    diagnostics.append(loc_info)
 """
     return code
 
@@ -142,7 +140,7 @@ def generate_typecheck_code(file_path, module_name="custom_module"):
     code_parts.append(head)
 
     # 在main函数开始时定义result变量
-    code_parts.append("result = {'success': True, 'content': []}")
+    code_parts.append("result = {'hints': [], 'diagnostics': []}")
 
     for name in module.__dir__():
         item = getattr(module, name)
@@ -154,27 +152,27 @@ def generate_typecheck_code(file_path, module_name="custom_module"):
             # print(f"Examining {func_name}")
             pyfunc: Callable = func._pyfunc
 
-            # 4. Get the source code of the function
-
-            # source_code = inspect.getsource(pyfunc)
-            # print(f"line of source code is {len(source_code.splitlines())}")
-
-            # source_lines, start_line = inspect.getsourcelines(pyfunc)
-            # print("Starting line number:", start_line)
+            # 获取函数的起始行号
+            source_lines, start_line = inspect.getsourcelines(pyfunc)
 
             docs = pyfunc.__doc__
 
-            args_str = parse_typecheck_params(docs)
-
-            kernel = Kernel(name=func_name, args_str=args_str)
-
-            # print(var_def_code(kernel))
-
-            # print(launch_code(kernel))
-
-            # code_parts.append(var_def_code(kernel))
-
-            code_parts.append(launch_code(kernel))
+            try:
+                args_str = parse_typecheck_params(docs)
+                kernel = Kernel(name=func_name, args_str=args_str)
+                code_parts.append(launch_code(kernel))
+            except ValueError as e:
+                # 如果参数未正确注释，添加诊断信息
+                diagnostic_code = f"""
+# 为未正确注释的 kernel {func_name} 添加诊断信息
+diagnostics.append({{
+    "message": "Kernel '{func_name}' is not properly annotated with typecheck parameters. Please add <typecheck>...</typecheck> tags in the docstring.",
+    "line": {start_line},
+    "col": 0,
+    "filename": "{file_path.name}"
+}})
+"""
+                code_parts.append(diagnostic_code)
 
     code_parts.append(tail)
 

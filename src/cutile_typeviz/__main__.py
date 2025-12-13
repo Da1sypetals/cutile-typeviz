@@ -80,13 +80,13 @@ class TileErrorInfo:
 class PythonResult:
     """新的结果格式接口"""
 
-    def __init__(self, success: bool, content: Any):
-        self.success = success
-        self.content = content
+    def __init__(self, hints: List[Any], diagnostics: List[Any]):
+        self.hints = hints
+        self.diagnostics = diagnostics
 
     @classmethod
     def from_dict(cls, data: dict) -> "PythonResult":
-        return cls(success=data["success"], content=data["content"])
+        return cls(hints=data.get("hints", []), diagnostics=data.get("diagnostics", []))
 
 
 # ============================================================
@@ -392,42 +392,30 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
                 logger.debug(f"Step 3 - Read and parse typecheck result completed in {read_elapsed:.0f}ms")
 
                 # 处理结果
-                if json_result.success and isinstance(json_result.content, list):
-                    # 成功情况：更新 inlay hints 缓存，清空诊断缓存
-                    hints = [Hint.from_dict(h) for h in json_result.content]
-                    with server._lock:
-                        server.hints_cache[uri] = hints
-                        server.diagnostics_cache[uri] = []
+                # 更新 inlay hints 缓存
+                hints = [Hint.from_dict(h) for h in json_result.hints] if isinstance(json_result.hints, list) else []
+                with server._lock:
+                    server.hints_cache[uri] = hints
 
-                    total_elapsed = (datetime.now() - total_start_time).total_seconds() * 1000
-                    logger.info(
-                        f"Cache updated for {uri} with {len(hints)} hints (total time: {total_elapsed:.0f}ms)"
-                    )
+                # 处理诊断信息
+                diagnostics = []
+                if isinstance(json_result.diagnostics, list):
+                    for diag_data in json_result.diagnostics:
+                        if isinstance(diag_data, dict):
+                            error_info = TileErrorInfo.from_dict(diag_data)
+                            # 获取当前文档以创建诊断范围
+                            current_document = server.workspace.get_text_document(uri)
+                            if current_document:
+                                diag_list = create_diagnostics_from_tile_error(error_info, current_document)
+                                diagnostics.extend(diag_list)
 
-                elif not json_result.success and isinstance(json_result.content, dict):
-                    # 失败情况：清空 inlay hints 缓存，设置诊断信息
-                    with server._lock:
-                        server.hints_cache[uri] = []
+                with server._lock:
+                    server.diagnostics_cache[uri] = diagnostics
 
-                    error_info = TileErrorInfo.from_dict(json_result.content)
-                    # 获取当前文档以创建诊断范围
-                    current_document = server.workspace.get_text_document(uri)
-                    diagnostics = (
-                        create_diagnostics_from_tile_error(error_info, current_document)
-                        if current_document
-                        else []
-                    )
-                    with server._lock:
-                        server.diagnostics_cache[uri] = diagnostics
-
-                    logger.warning(f"Typecheck failed for {uri}: {error_info.message}")
-
-                else:
-                    # 未知结果格式：清空缓存
-                    with server._lock:
-                        server.hints_cache[uri] = []
-                        server.diagnostics_cache[uri] = []
-                    logger.warning(f"Unknown result format for {uri}: {json_result.content}")
+                total_elapsed = (datetime.now() - total_start_time).total_seconds() * 1000
+                logger.info(
+                    f"Cache updated for {uri} with {len(hints)} hints and {len(diagnostics)} diagnostics (total time: {total_elapsed:.0f}ms)"
+                )
 
                 # 触发 inlay hints 刷新和诊断刷新
                 try:
