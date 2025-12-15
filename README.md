@@ -1,5 +1,9 @@
 # cutile_typeviz: cuTile Type Hints
 
+Provide inlay type hints for cuTile programs.
+
+![demo0](assets/demo0.png)
+
 ## Build
 
 1. Install this repo as a package in your current python environment with `pip install -e .`
