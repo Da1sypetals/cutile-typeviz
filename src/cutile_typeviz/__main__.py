@@ -1,3 +1,4 @@
+import ast
 import json
 import logging
 import os
@@ -311,6 +312,30 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
         env["PYTHONPATH"] = str(CUTILE_SRC_PATH)
 
         try:
+            # 首先：尝试用exec模式parse源代码，如果失败就不要继续，清空hints
+            try:
+                ast.parse(text, mode="exec")
+            except Exception as e:
+                logger.error(f"Invalid Python code in source: {e}, skipping typecheck and cleaning up hints")
+                # 清空缓存并发布空诊断信息
+                with server._lock:
+                    server.hints_cache[uri] = []
+                    server.diagnostics_cache[uri] = []
+                    server.running_tasks[uri] = False
+
+                # 发布空诊断信息
+                server.text_document_publish_diagnostics(
+                    types.PublishDiagnosticsParams(uri=uri, diagnostics=[])
+                )
+
+                # 刷新inlay hints
+                try:
+                    server.workspace_inlay_hint_refresh(None)
+                except Exception as refresh_error:
+                    logger.debug(f"Failed to refresh inlay hints: {refresh_error}")
+
+                return
+
             # 第一步：异步执行 assemble.py 脚本处理输入
             assemble_start_time = datetime.now()
 
@@ -393,7 +418,11 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
 
                 # 处理结果
                 # 更新 inlay hints 缓存
-                hints = [Hint.from_dict(h) for h in json_result.hints] if isinstance(json_result.hints, list) else []
+                hints = (
+                    [Hint.from_dict(h) for h in json_result.hints]
+                    if isinstance(json_result.hints, list)
+                    else []
+                )
                 with server._lock:
                     server.hints_cache[uri] = hints
 

@@ -13,9 +13,9 @@ N_DIM = 1024
 def batch_matmul_kernel(A, B, C, tm: ConstInt, tn: ConstInt, tk: ConstInt):
     """
     <typecheck>
-    MockTensor((16, 1024, 2048), dtype="bfloat16")
-    MockTensor((16, 2048, 512), dtype="bfloat16")
-    MockTensor((16, 1024, 512), dtype="bfloat16")
+    MockTensor((BATCH_DIM, M_DIM, K_DIM), dtype="bfloat16")
+    MockTensor((BATCH_DIM, K_DIM, N_DIM), dtype="bfloat16")
+    MockTensor((BATCH_DIM, M_DIM, N_DIM), dtype="bfloat16")
     32
     64
     128
