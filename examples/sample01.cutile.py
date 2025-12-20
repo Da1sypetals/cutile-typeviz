@@ -112,9 +112,6 @@ def matmul_kernel(
     ct.store(C, index=(bidx, bidy), tile=accumulator)
 
 
-# cutile-typeviz: end
-
-
 @ct.kernel
 def persistent_matmul_kernel(
     A,

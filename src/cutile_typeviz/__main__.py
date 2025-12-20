@@ -5,10 +5,13 @@ import os
 import subprocess
 import sys
 import threading
+import tokenize
+import io
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
 
 from lsprotocol import types
 from pygls.lsp.server import LanguageServer
@@ -26,11 +29,21 @@ ASSEMBLE_SCRIPT_PATH = CUTILE_SRC_PATH / "typecheck" / "assemble.py"
 CACHE_DIR_NAME = ".cutile_typeviz"
 OUTPUT_PATH = Path.home() / CACHE_DIR_NAME / "main.py"
 TYPECHECK_INFO_PATH = Path.home() / CACHE_DIR_NAME / "typecheck.json"
+SOURCE_CACHE_PATH = Path.home() / CACHE_DIR_NAME / "source.py"
 
 
 # ============================================================
 # 类型定义
 # ============================================================
+
+
+@dataclass
+class CommentAnnotation:
+    """注释注解信息"""
+
+    content: str
+    start: tuple[int, int]  # line, col
+    end: tuple[int, int]  # line, col
 
 
 class Hint:
@@ -119,6 +132,97 @@ def setup_logger() -> logging.Logger:
 
 # 全局日志记录器
 logger = setup_logger()
+
+
+# ============================================================
+# Comment Annotation 处理函数
+# ============================================================
+
+
+def extract_comment_annotations(source: str) -> List[CommentAnnotation]:
+    """从源代码中提取 cutile-typeviz 注释注解"""
+    comment_annotations: List[CommentAnnotation] = []
+
+    # 将源代码转换为字节流供tokenize使用
+    source_bytes = source.encode("utf-8")
+    source_io = io.BytesIO(source_bytes)
+
+    try:
+        # 使用tokenize生成tokens
+        tokens = tokenize.tokenize(source_io.readline)
+
+        for token in tokens:
+            # 检查是否是注释token
+            if token.type == tokenize.COMMENT:
+                comment_content = token.string.strip()
+                comment_content = comment_content[1:].strip()  # keep only the content after #
+
+                # 检查是否以"cutile-typeviz"开头，允许任意空格
+                if comment_content.startswith("cutile-typeviz"):
+                    annotation_str = comment_content[14:].strip()
+                    if annotation_str.startswith(":"):
+                        annotation_str = annotation_str[1:].strip()
+
+                        # 计算注释的起始和结束位置
+                        start_line, start_col = token.start
+                        end_line, end_col = token.end
+
+                        # 创建CommentAnnotation对象
+                        annotation = CommentAnnotation(
+                            content=annotation_str,
+                            start=(start_line, start_col),
+                            end=(end_line, end_col),
+                        )
+                        comment_annotations.append(annotation)
+
+    except tokenize.TokenError:
+        # 如果tokenize失败，返回空列表
+        pass
+
+    return comment_annotations
+
+
+def apply_comment_annotations(source: str) -> str:
+    """应用注释注解，处理 cutile-typeviz: end 标记"""
+    comment_annotations = extract_comment_annotations(source)
+
+    # Apply cutile-typeviz: end
+    end_annotation: Optional[CommentAnnotation] = None
+    for annotation in comment_annotations:
+        if annotation.content == "end":
+            if end_annotation is None:
+                # Apply the FIRST end annotation
+                end_annotation = annotation
+
+    processed_source = source
+    if end_annotation is not None:
+        end_line = end_annotation.start[0] - 1
+        processed_source = "\n".join(source.splitlines()[:end_line])
+
+    return processed_source
+
+
+def save_processed_source(source: str, uri: str) -> str:
+    """处理源代码并保存到缓存目录，返回处理后的文件路径"""
+    # 应用注释注解
+    processed_source = apply_comment_annotations(source)
+
+    # 确保缓存目录存在
+    cache_dir = Path.home() / CACHE_DIR_NAME
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # 生成唯一的缓存文件名（基于URI）
+    # import hashlib
+    # uri_hash = hashlib.sha256(uri.encode()).hexdigest()[:8]
+    # source_cache_path = cache_dir / f"source_{uri_hash}.py"
+
+    source_cache_path = cache_dir / "source.py"
+
+    # 保存处理后的源代码
+    source_cache_path.write_text(processed_source, encoding="utf-8")
+
+    logger.debug(f"Processed source saved to: {source_cache_path}")
+    return str(source_cache_path)
 
 
 # ============================================================
@@ -248,10 +352,12 @@ def call_python_cutile_typecheck_sync(
     env = os.environ.copy()
     env["PYTHONPATH"] = str(CUTILE_SRC_PATH)
 
+    # 在语言服务器入口处理 comment annotation
+    processed_source_path = save_processed_source(text, script_path)
+
     # 第一步：执行 assemble.py 脚本处理输入
     subprocess.run(
-        [python_executable, str(ASSEMBLE_SCRIPT_PATH), "-f", script_path],
-        input=text,
+        [python_executable, str(ASSEMBLE_SCRIPT_PATH), "-f", processed_source_path],
         encoding="utf-8",
         env=env,
         timeout=30,
@@ -336,12 +442,14 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
 
                 return
 
+            # 在语言服务器入口处理 comment annotation
+            processed_source_path = save_processed_source(text, uri)
+
             # 第一步：异步执行 assemble.py 脚本处理输入
             assemble_start_time = datetime.now()
 
             result = subprocess.run(
-                [server.python_executable, str(ASSEMBLE_SCRIPT_PATH), "-f", script_path],
-                input=text,
+                [server.python_executable, str(ASSEMBLE_SCRIPT_PATH), "-f", processed_source_path],
                 encoding="utf-8",
                 env=env,
                 timeout=30,
