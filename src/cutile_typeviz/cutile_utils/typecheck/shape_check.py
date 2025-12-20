@@ -13,6 +13,7 @@ from cuda.tile._cext import default_tile_context
 from cuda.tile._execution import kernel as cutile_kernel
 from cuda.tile._ir import ir
 from enum import StrEnum
+from dataclasses import dataclass
 from functools import wraps
 
 
@@ -92,6 +93,31 @@ def _flatten_operations(operations: list[Operation]) -> list[Operation]:
     return flattened
 
 
+@dataclass
+class KernelSource:
+    source_code: str
+    starting_line: int
+    tree: ast.AST
+
+
+def _get_kernel_source(func: Callable) -> str:
+    try:
+        source_code, starting_line = inspect.getsourcelines(func)
+    except OSError as e:
+        raise OSError(f"Cannot retrieve source code for {func.__name__}: {e}")
+
+    # Join source lines and dedent
+    source_code = "".join(source_code)
+    source_code = textwrap.dedent(source_code)
+
+    try:
+        tree = ast.parse(source_code)
+    except SyntaxError:
+        raise SyntaxError(f"Invalid Python code for {func.__name__}")
+
+    return KernelSource(source_code, starting_line, tree)
+
+
 def _get_control_flow_lines_mapping(func: Callable) -> dict[int, ControlFlowToken]:
     """
     Find line numbers where control flow statements appear using AST.
@@ -110,19 +136,7 @@ def _get_control_flow_lines_mapping(func: Callable) -> dict[int, ControlFlowToke
     if not callable(func):
         raise TypeError(f"Expected a function, got {type(func)}")
 
-    try:
-        source_code, starting_line = inspect.getsourcelines(func)
-    except OSError as e:
-        raise OSError(f"Cannot retrieve source code for {func.__name__}: {e}")
-
-    # Join source lines and dedent
-    source_code = "".join(source_code)
-    source_code = textwrap.dedent(source_code)
-
-    try:
-        tree = ast.parse(source_code)
-    except SyntaxError:
-        raise SyntaxError(f"Invalid Python code for {func.__name__}")
+    kernel_src = _get_kernel_source(func)
 
     results = {
         ControlFlowToken.If: [],
@@ -135,33 +149,37 @@ def _get_control_flow_lines_mapping(func: Callable) -> dict[int, ControlFlowToke
     class ControlFlowVisitor(ast.NodeVisitor):
         def visit_If(self, node):
             # Add starting_line - 1 to get absolute line number
-            results[ControlFlowToken.If].append(node.lineno + starting_line - 1)
+            results[ControlFlowToken.If].append(node.lineno + kernel_src.starting_line - 1)
 
             # Handle elif chains
             if node.orelse:
                 if len(node.orelse) == 1 and isinstance(node.orelse[0], ast.If):
                     # This is an elif
-                    results[ControlFlowToken.Elif].append(node.orelse[0].lineno + starting_line - 1)
+                    results[ControlFlowToken.Elif].append(
+                        node.orelse[0].lineno + kernel_src.starting_line - 1
+                    )
                 elif node.orelse:
                     # This is an else (could be else-if or just else)
                     # Check if it's a bare else or contains statements
                     first_stmt = node.orelse[0]
                     if not isinstance(first_stmt, ast.If):
                         # It's a genuine else block
-                        results[ControlFlowToken.Else].append(first_stmt.lineno - 1 + starting_line - 1)
+                        results[ControlFlowToken.Else].append(
+                            first_stmt.lineno - 1 + kernel_src.starting_line - 1
+                        )
 
             self.generic_visit(node)
 
         def visit_While(self, node):
-            results[ControlFlowToken.While].append(node.lineno + starting_line - 1)
+            results[ControlFlowToken.While].append(node.lineno + kernel_src.starting_line - 1)
             self.generic_visit(node)
 
         def visit_For(self, node):
-            results[ControlFlowToken.For].append(node.lineno + starting_line - 1)
+            results[ControlFlowToken.For].append(node.lineno + kernel_src.starting_line - 1)
             self.generic_visit(node)
 
     visitor = ControlFlowVisitor()
-    visitor.visit(tree)
+    visitor.visit(kernel_src.tree)
 
     revmap = dict()
 
