@@ -127,6 +127,83 @@ except TileError as e:
     return code
 
 
+@dataclass
+class CommentAnnotation:
+    content: str
+    # line, col
+    start: tuple[int, int]
+    # line, col
+    end: tuple[int, int]
+
+
+def apply_comment_annotations(source: str) -> str:
+    import tokenize
+    import io
+
+    comment_annotations: list[CommentAnnotation] = []
+
+    # 将源代码转换为字节流供tokenize使用
+    source_bytes = source.encode("utf-8")
+    source_io = io.BytesIO(source_bytes)
+
+    # with open("/Users/daisy/develop/cutile-typeviz/a.txt", "w") as f:
+    #     f.write("")
+
+    try:
+        # 使用tokenize生成tokens
+        tokens = tokenize.tokenize(source_io.readline)
+
+        for token in tokens:
+            # 检查是否是注释token
+            if token.type == tokenize.COMMENT:
+                comment_content = token.string.strip()
+                comment_content = comment_content[1:].strip()  # keep only the content after #
+
+                # with open("/Users/daisy/develop/cutile-typeviz/a.txt", "a") as f:
+                #     start_line, start_col = token.start
+                #     end_line, end_col = token.end
+                #     f.write(f"{start_line}:{start_col} - {end_line}:{end_col} | ")
+                #     f.write(comment_content)
+                #     f.write("\n")
+
+                # 检查是否以"cutile-typeviz:"开头，允许任意空格
+                if comment_content.startswith("cutile-typeviz"):
+                    annotation_str = comment_content[14:].strip()
+                    if annotation_str.startswith(":"):
+                        annotation_str = annotation_str[1:].strip()
+
+                        # 计算注释的起始和结束位置
+                        start_line, start_col = token.start
+                        end_line, end_col = token.end
+
+                        # 创建CommentAnnotation对象
+                        annotation = CommentAnnotation(
+                            content=annotation_str,
+                            start=(start_line, start_col),
+                            end=(end_line, end_col),
+                        )
+                        comment_annotations.append(annotation)
+
+    except tokenize.TokenError:
+        # 如果tokenize失败，返回空列表
+        pass
+
+    # Apply cutile-typeviz: end
+    end_annotation: CommentAnnotation | None = None
+    for annotation in comment_annotations:
+        if annotation.content == "end":
+            if end_annotation is None:
+                # Apply the FIRST end annotation
+                end_annotation = annotation
+
+    processed_source = source
+    if end_annotation is not None:
+        end_line = end_annotation.start[0] - 1
+        processed_source = "\n".join(source.splitlines()[:end_line])
+
+    return processed_source
+
+
 def generate_typecheck_code(file_path, module_name="custom_module"):
     # 1. Define the path to the file
     file_path = Path(file_path)
@@ -180,7 +257,9 @@ diagnostics.append({{
 
     file_content = file_path.read_text()
 
-    code = file_content
+    source = apply_comment_annotations(file_content)
+
+    code = source
     code += "\n"
     code += "\ndef main():\n"
     code += textwrap.indent(main_code, space(4))
