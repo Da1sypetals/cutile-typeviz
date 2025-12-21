@@ -4,7 +4,15 @@ Provide inlay type hints for cuTile programs.
 
 ![demo0](assets/demo0.png)
 
-## Quick Build
+
+## Quick install
+
+1. First, `pip install -e .`
+2. Then, download the `.vsix` prebuilt extension from release page and install it.
+3. Reload your VSCode.
+
+## Build manually
+This requires `node.js`
 ```sh
 bash build_ext.sh
 ```
