@@ -111,7 +111,7 @@ def flash_sdpa(
 def apply_rope(
     q: ct.Array,  # [b, s, h, 2, d // 2]
     k: ct.Array,  # [b, s, h_kv, 2, d // 2]
-    cos: ct.Array,  # [b, s, 2, d // 2]reload
+    cos: ct.Array,  # [b, s, 2, d // 2]
     sin: ct.Array,  # [b, s, 2, d // 2]
     out_q: ct.Array,
     out_k: ct.Array,

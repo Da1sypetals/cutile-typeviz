@@ -456,7 +456,7 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
                     types.PublishDiagnosticsParams(uri=uri, diagnostics=[])
                 )
 
-                # 刷新inlay hintsreload
+                # 刷新inlay hints
                 try:
                     server.workspace_inlay_hint_refresh(None)
                 except Exception as refresh_error:
