@@ -4,15 +4,14 @@ Provide inlay type hints for cuTile programs.
 
 ![demo0](assets/demo0.png)
 
-## Build
-
-1. Install this repo as a package in your current python environment with `pip install -e .`
-2. Build and install the extension
-
 ## Quick Build
 ```sh
 bash build_ext.sh
 ```
+
+What it does:
+- Install this repo as a package with `pip install -e .`
+- Build the extension under `vscode_extension` directory and install it into your vscode with `code --install-extension`
 
 
 ## Usage
