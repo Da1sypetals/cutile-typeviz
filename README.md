@@ -22,6 +22,10 @@ bash build_ext.sh
 - Change the file extension to `.cutile.py`
 - Add `<typecheck>` annotations in your kernel's docstring (see below)
     - Hint: You may feed the following rule and an example into LLM and have it write the type annotation for you.
+- Optionally, add `# cutile-typeviz: end` annotation to where you want the plugin to stop inspection. 
+    - The plugin works by including your source code into a template script and running the `cuTile` compiler frontend with mock inputs, so you may avoid running redundant code with this annotation.
+    - See `sample02.cutile.py` for an example.
+
 
 
 ## TODO
@@ -56,7 +60,7 @@ def your_kernel(param1, param2, param3, const_param: ConstInt):
 
 1. **Placement**: The `<typecheck>` block must be placed at the **beginning** of the docstring
 2. **Order**: Each line corresponds to a function parameter **in the same order** as they appear in the function signature
-3. **One per line**: Each parameter annotation must be on its own line
+3. **One per line**: Each parameter annotation must be on its own line. Empty lines are ignored.
 
 ### Parameter Types
 

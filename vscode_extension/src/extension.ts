@@ -84,7 +84,7 @@ export async function activate(context: ExtensionContext) {
     // 客户端选项
     const clientOptions: LanguageClientOptions = {
         // 注册所有文件类型
-        documentSelector: [{ scheme: 'file', language: '*' }],
+        documentSelector: [{ scheme: 'file', language: 'python' }],
         synchronize: {
             // 监听工作区配置变化
             configurationSection: 'cuTileTypeviz',

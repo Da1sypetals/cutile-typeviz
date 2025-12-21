@@ -6,6 +6,13 @@ import numpy as np
 
 INV_LOG2 = 1.0 / math.log(2)
 
+Batch = 5
+Sequence = 16384
+Head = 16
+HeadKV = 4
+Dim = 128
+Groups = Head // HeadKV
+
 
 @ct.kernel
 def flash_sdpa(
@@ -22,16 +29,16 @@ def flash_sdpa(
 ):
     """
     <typecheck>
-    MockTensor((5, 16384, 16, 128), dtype="bfloat16")
-    MockTensor((5, 16384, 4, 128), dtype="bfloat16")
-    MockTensor((5, 16384, 4, 128), dtype="bfloat16")
-    MockTensor((5, 16384, 16, 128), dtype="bfloat16")
+    MockTensor((Batch, Sequence, Head, Dim), dtype="bfloat16")
+    MockTensor((Batch, Sequence, HeadKV, Dim), dtype="bfloat16")
+    MockTensor((Batch, Sequence, HeadKV, Dim), dtype="bfloat16")
+    MockTensor((Batch, Sequence, Head, Dim), dtype="bfloat16")
     1.0
-    4
+    Groups
     32
     64
-    16
-    128
+    Head
+    Dim
     </typecheck>
     """
     bid_b_h = ct.bid(0)
@@ -97,11 +104,14 @@ def flash_sdpa(
     ct.store(o, index=(bid_b, bid_s, bid_h, 0), tile=o_i)
 
 
+# cutile-typeviz: END
+
+
 @ct.kernel
 def apply_rope(
     q: ct.Array,  # [b, s, h, 2, d // 2]
     k: ct.Array,  # [b, s, h_kv, 2, d // 2]
-    cos: ct.Array,  # [b, s, 2, d // 2]
+    cos: ct.Array,  # [b, s, 2, d // 2]reload
     sin: ct.Array,  # [b, s, 2, d // 2]
     out_q: ct.Array,
     out_k: ct.Array,
@@ -111,15 +121,15 @@ def apply_rope(
 ):
     """
     <typecheck>
-    MockTensor((5, 16384, 16, 2, 64), dtype="bfloat16")
-    MockTensor((5, 16384, 4, 2, 64), dtype="bfloat16")
-    MockTensor((5, 16384, 2, 64), dtype="float32")
-    MockTensor((5, 16384, 2, 64), dtype="float32")
-    MockTensor((5, 16384, 16, 2, 64), dtype="bfloat16")
-    MockTensor((5, 16384, 4, 2, 64), dtype="bfloat16")
-    16
-    4
-    64
+    MockTensor((Batch, Sequence, Head, 2, Dim // 2), dtype="bfloat16")
+    MockTensor((Batch, Sequence, HeadKV, 2, Dim // 2), dtype="bfloat16")
+    MockTensor((Batch, Sequence, 2, Dim // 2), dtype="float32")
+    MockTensor((Batch, Sequence, 2, Dim // 2), dtype="float32")
+    MockTensor((Batch, Sequence, Head, 2, Dim // 2), dtype="bfloat16")
+    MockTensor((Batch, Sequence, HeadKV, 2, Dim // 2), dtype="bfloat16")
+    Head
+    HeadKV
+    Dim // 2
     </typecheck>
     """
     bid_b = ct.bid(0)

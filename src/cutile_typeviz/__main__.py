@@ -158,10 +158,12 @@ def extract_comment_annotations(source: str) -> List[CommentAnnotation]:
                 comment_content = comment_content[1:].strip()  # keep only the content after #
 
                 # 检查是否以"cutile-typeviz"开头，允许任意空格
-                if comment_content.startswith("cutile-typeviz"):
-                    annotation_str = comment_content[14:].strip()
-                    if annotation_str.startswith(":"):
-                        annotation_str = annotation_str[1:].strip()
+                if comment_content.startswith("cutile-typeviz") or comment_content.startswith(
+                    "cutile_typeviz"
+                ):
+                    comment_content = comment_content[14:].strip()
+                    if comment_content.startswith(":"):
+                        annotation_str = comment_content[1:].strip()
 
                         # 计算注释的起始和结束位置
                         start_line, start_col = token.start
@@ -189,7 +191,7 @@ def apply_comment_annotations(source: str) -> str:
     # Apply cutile-typeviz: end
     end_annotation: Optional[CommentAnnotation] = None
     for annotation in comment_annotations:
-        if annotation.content == "end":
+        if annotation.content.lower() == "end":
             if end_annotation is None:
                 # Apply the FIRST end annotation
                 end_annotation = annotation
