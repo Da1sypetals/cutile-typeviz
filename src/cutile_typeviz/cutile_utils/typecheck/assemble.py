@@ -5,10 +5,10 @@ from pathlib import Path
 from dataclasses import dataclass
 import textwrap
 import inspect
+import hashlib
 
 CACHE_DIR_NAME = ".cutile_typeviz"
 TYPECHECK_INFO_FILENAME = "typecheck.json"
-TYPECHECK_INFO_PATH = Path.home() / CACHE_DIR_NAME / TYPECHECK_INFO_FILENAME
 
 head = """
 import json
@@ -22,14 +22,6 @@ hints = []
 diagnostics = []
 """
 
-tail = f"""
-# 序列化结果，只包含必要的字段
-result["hints"] = hints
-result["diagnostics"] = diagnostics
-result_str = json.dumps(result)
-typecheck_info_path = Path("{TYPECHECK_INFO_PATH}").resolve()
-typecheck_info_path.write_text(result_str)
-"""
 
 entrance = """
 if __name__ == "__main__":
@@ -127,11 +119,20 @@ except TileError as e:
     return code
 
 
-def generate_typecheck_code(file_path, module_name="custom_module"):
+def generate_typecheck_code(file_path, uri, module_name="custom_module"):
     # 1. Define the path to the file
     file_path = Path(file_path)
 
-    # 2. Load the module dynamically
+    # 2. 基于 URI 计算子目录名
+    uri_hash = hashlib.sha256(uri.encode()).hexdigest()[:16]
+    cache_dir = Path.home() / CACHE_DIR_NAME / uri_hash
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # 3. 设置子目录中的文件路径
+    output_file_path = cache_dir / "main.py"
+    typecheck_info_path = cache_dir / TYPECHECK_INFO_FILENAME
+
+    # 4. Load the module dynamically
     spec = importlib.util.spec_from_file_location(module_name, file_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -174,6 +175,14 @@ diagnostics.append({{
 """
                 code_parts.append(diagnostic_code)
 
+    tail = f"""
+# 序列化结果，只包含必要的字段
+result["hints"] = hints
+result["diagnostics"] = diagnostics
+result_str = json.dumps(result)
+typecheck_info_path = Path("{str(typecheck_info_path)}").resolve()
+typecheck_info_path.write_text(result_str)
+"""
     code_parts.append(tail)
 
     main_code = "\n\n".join(code_parts)
@@ -187,7 +196,7 @@ diagnostics.append({{
     code += textwrap.indent(main_code, space(4))
     code += entrance
 
-    return code
+    return code, str(output_file_path), str(typecheck_info_path)
 
 
 if __name__ == "__main__":
@@ -197,14 +206,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", "-f", type=str, required=True)
+    parser.add_argument("--uri", "-u", type=str, required=True)
     args = parser.parse_args()
 
-    code = generate_typecheck_code(args.file)
+    code, output_file_path, typecheck_info_path = generate_typecheck_code(args.file, args.uri)
 
-    cache_dir = Path.home() / CACHE_DIR_NAME
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    # 将代码写入到子目录中的文件
+    Path(output_file_path).write_text(code)
 
-    output_file = cache_dir / "main.py"
-    output_file.write_text(code)
-
-    print(f"Code saved to {output_file}")
+    print(f"Code saved to {output_file_path}")
+    print(f"Typecheck info will be saved to {typecheck_info_path}")

@@ -1,4 +1,5 @@
 import ast
+import hashlib
 import json
 import logging
 import os
@@ -30,6 +31,24 @@ CACHE_DIR_NAME = ".cutile_typeviz"
 OUTPUT_PATH = Path.home() / CACHE_DIR_NAME / "main.py"
 TYPECHECK_INFO_PATH = Path.home() / CACHE_DIR_NAME / "typecheck.json"
 SOURCE_CACHE_PATH = Path.home() / CACHE_DIR_NAME / "source.py"
+
+
+def get_uri_based_paths(uri: str) -> tuple[Path, Path]:
+    """基于 URI 计算文件路径
+
+    Args:
+        uri: 文档 URI
+
+    Returns:
+        tuple: (output_path, typecheck_info_path)
+    """
+    uri_hash = hashlib.sha256(uri.encode()).hexdigest()[:16]
+    cache_subdir = Path.home() / CACHE_DIR_NAME / uri_hash
+
+    output_path = cache_subdir / "main.py"
+    typecheck_info_path = cache_subdir / "typecheck.json"
+
+    return output_path, typecheck_info_path
 
 
 # ============================================================
@@ -209,15 +228,12 @@ def save_processed_source(source: str, uri: str) -> str:
     # 应用注释注解
     processed_source = apply_comment_annotations(source)
 
-    # 确保缓存目录存在
-    cache_dir = Path.home() / CACHE_DIR_NAME
+    # 基于 URI 计算子目录名
+    uri_hash = hashlib.sha256(uri.encode()).hexdigest()[:16]
+    cache_dir = Path.home() / CACHE_DIR_NAME / uri_hash
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # 生成唯一的缓存文件名（基于URI）
-    # import hashlib
-    # uri_hash = hashlib.sha256(uri.encode()).hexdigest()[:8]
-    # source_cache_path = cache_dir / f"source_{uri_hash}.py"
-
+    # 设置子目录中的文件路径
     source_cache_path = cache_dir / "source.py"
 
     # 保存处理后的源代码
@@ -332,7 +348,7 @@ def create_range_from_error_info(error_info: TileErrorInfo, document: TextDocume
 
 
 def call_python_cutile_typecheck_sync(
-    text: str, script_path: str, python_executable: Optional[str]
+    text: str, script_path: str, uri: str, python_executable: Optional[str]
 ) -> Optional[PythonResult]:
     """
     调用 Python 脚本执行 cuTile 类型检查（同步版本）
@@ -341,6 +357,7 @@ def call_python_cutile_typecheck_sync(
     Args:
         text: 要分析的文本内容
         script_path: 要运行的 Python 脚本路径（正在监控的文件）
+        uri: 文档 URI
         python_executable: Python 解释器路径
 
     Returns:
@@ -355,11 +372,14 @@ def call_python_cutile_typecheck_sync(
     env["PYTHONPATH"] = str(CUTILE_SRC_PATH)
 
     # 在语言服务器入口处理 comment annotation
-    processed_source_path = save_processed_source(text, script_path)
+    processed_source_path = save_processed_source(text, uri)
+
+    # 基于 URI 计算文件路径
+    output_path, typecheck_info_path = get_uri_based_paths(uri)
 
     # 第一步：执行 assemble.py 脚本处理输入
     subprocess.run(
-        [python_executable, str(ASSEMBLE_SCRIPT_PATH), "-f", processed_source_path],
+        [python_executable, str(ASSEMBLE_SCRIPT_PATH), "-f", processed_source_path, "-u", uri],
         encoding="utf-8",
         env=env,
         timeout=30,
@@ -367,9 +387,9 @@ def call_python_cutile_typecheck_sync(
         capture_output=True,
     )
 
-    # 第二步：执行 OUTPUT_PATH 文件获取最终结果
+    # 第二步：执行 output_path 文件获取最终结果
     subprocess.run(
-        [python_executable, str(OUTPUT_PATH)],
+        [python_executable, str(output_path)],
         encoding="utf-8",
         env=env,
         timeout=30,
@@ -377,8 +397,8 @@ def call_python_cutile_typecheck_sync(
         capture_output=True,
     )
 
-    # 第三步：读取 TYPECHECK_INFO_PATH 文件获取结果
-    with open(TYPECHECK_INFO_PATH, "r", encoding="utf-8") as f:
+    # 第三步：读取 typecheck_info_path 文件获取结果
+    with open(typecheck_info_path, "r", encoding="utf-8") as f:
         typecheck_result = f.read()
 
     json_result = json.loads(typecheck_result)
@@ -436,7 +456,7 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
                     types.PublishDiagnosticsParams(uri=uri, diagnostics=[])
                 )
 
-                # 刷新inlay hints
+                # 刷新inlay hintsreload
                 try:
                     server.workspace_inlay_hint_refresh(None)
                 except Exception as refresh_error:
@@ -447,11 +467,14 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
             # 在语言服务器入口处理 comment annotation
             processed_source_path = save_processed_source(text, uri)
 
+            # 基于 URI 计算文件路径
+            output_path, typecheck_info_path = get_uri_based_paths(uri)
+
             # 第一步：异步执行 assemble.py 脚本处理输入
             assemble_start_time = datetime.now()
 
             result = subprocess.run(
-                [server.python_executable, str(ASSEMBLE_SCRIPT_PATH), "-f", processed_source_path],
+                [server.python_executable, str(ASSEMBLE_SCRIPT_PATH), "-f", processed_source_path, "-u", uri],
                 encoding="utf-8",
                 env=env,
                 timeout=30,
@@ -465,15 +488,25 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
                 with server._lock:
                     server.running_tasks[uri] = False
 
-                # 报告错误给用户
+                # 检查是否为 exec_module 失败（模块导入失败）
                 error_message = (
                     f"Assemble failed: {result.stderr.strip()}"
                     if result.stderr
                     else f"Assemble failed with code {result.returncode}"
                 )
-                with server._lock:
-                    server.hints_cache[uri] = []
-                    server.diagnostics_cache[uri] = [create_file_level_error_diagnostic(error_message)]
+                
+                # 如果是模块导入失败，跳过类型检查并清理所有提示和诊断
+                if "exec_module" in error_message or "import" in error_message.lower():
+                    logger.info(f"Module import failed for {uri}, skipping typecheck and cleaning up hints")
+                    with server._lock:
+                        server.hints_cache[uri] = []
+                        server.diagnostics_cache[uri] = []
+                else:
+                    # 其他错误，报告给用户
+                    with server._lock:
+                        server.hints_cache[uri] = []
+                        server.diagnostics_cache[uri] = [create_file_level_error_diagnostic(error_message)]
+                
                 server.text_document_publish_diagnostics(
                     types.PublishDiagnosticsParams(uri=uri, diagnostics=server.diagnostics_cache.get(uri, []))
                 )
@@ -481,11 +514,11 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
 
             logger.debug(f"Step 1 - Assemble script completed in {assemble_elapsed:.0f}ms")
 
-            # 第二步：异步执行 OUTPUT_PATH 文件获取最终结果
+            # 第二步：异步执行 output_path 文件获取最终结果
             output_start_time = datetime.now()
 
             result2 = subprocess.run(
-                [server.python_executable, str(OUTPUT_PATH)],
+                [server.python_executable, str(output_path)],
                 encoding="utf-8",
                 env=env,
                 timeout=30,
@@ -517,9 +550,9 @@ def call_python_cutile_typecheck_async(text: str, script_path: str, uri: str) ->
             logger.debug(f"Step 2 - Output script completed in {output_elapsed:.0f}ms")
 
             try:
-                # 第三步：读取 TYPECHECK_INFO_PATH 文件获取结果
+                # 第三步：读取 typecheck_info_path 文件获取结果
                 read_start_time = datetime.now()
-                with open(TYPECHECK_INFO_PATH, "r", encoding="utf-8") as f:
+                with open(typecheck_info_path, "r", encoding="utf-8") as f:
                     typecheck_result = f.read()
                 json_result = PythonResult.from_dict(json.loads(typecheck_result))
                 read_elapsed = (datetime.now() - read_start_time).total_seconds() * 1000
