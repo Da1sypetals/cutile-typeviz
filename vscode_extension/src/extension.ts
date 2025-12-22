@@ -1,5 +1,6 @@
 import * as path from 'path';
-import { workspace, ExtensionContext, extensions } from 'vscode';
+import { workspace, ExtensionContext, extensions, window } from 'vscode';
+import { execSync } from 'child_process';
 
 import {
     LanguageClient,
@@ -55,6 +56,14 @@ export async function activate(context: ExtensionContext) {
     const pythonExecutable = pythonPath || 'python';
 
     console.log(`Using Python interpreter: ${pythonExecutable}`);
+
+    // 检查 cutile_typeviz 包是否已安装
+    try {
+        execSync(`${pythonExecutable} -c "import cutile_typeviz"`, { stdio: 'pipe' });
+    } catch (error) {
+        window.showErrorMessage('Python library `cutile-typeviz` is not installed in current envorinment. Install it or select a python envorinment with it installed, and restart the plugin.');
+        return;
+    }
 
     // 服务器选项 - 使用 Python 模块方式启动
     const serverOptions: ServerOptions = {
