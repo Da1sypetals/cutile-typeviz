@@ -43,6 +43,16 @@ class TypecheckSyntaxError(Exception):
         self.message = message
 
 
+class TypecheckParamCountError(Exception):
+    """当typecheck参数个数与函数定义的参数个数不匹配时抛出"""
+
+    def __init__(self, line: int, col: int, message: str):
+        super().__init__()
+        self.line = line
+        self.col = col
+        self.message = message
+
+
 def space(n: int):
     return " " * n
 
@@ -189,9 +199,6 @@ def generate_typecheck_code(file_path, uri, module_name="custom_module"):
     # 在main函数开始时定义result变量
     code_parts.append("result = {'hints': [], 'diagnostics': []}")
 
-    # 用于存储语法错误的诊断信息
-    syntax_error_diagnostic = None
-
     for name in module.__dir__():
         item = getattr(module, name)
 
@@ -210,16 +217,24 @@ def generate_typecheck_code(file_path, uri, module_name="custom_module"):
             try:
                 args_str = parse_typecheck_params(docs, source_lines, start_line)
 
-                # 如果之前有语法错误，跳过后续kernel的处理
-                if syntax_error_diagnostic is not None:
-                    continue
+                # 检查参数个数是否与函数定义的参数个数匹配
+                sig = inspect.signature(pyfunc)
+                func_param_count = len(sig.parameters)
+                typecheck_param_count = len(args_str)
+
+                if func_param_count != typecheck_param_count:
+                    raise TypecheckParamCountError(
+                        line=start_line,
+                        col=0,
+                        message=f"Parameter count mismatch in kernel '{func_name}': function has {func_param_count} parameters, but <typecheck> has {typecheck_param_count} parameters.",
+                    )
 
                 kernel = Kernel(name=func_name, args_str=args_str)
                 code_parts.append(launch_code(kernel))
-            except TypecheckSyntaxError as e:
-                # 语法错误时，记录诊断信息并清空所有其他内容
-                syntax_error_diagnostic = f"""
-# typecheck 语法错误
+            except TypecheckParamCountError as e:
+                # 参数个数不匹配时，记录诊断信息，但继续处理其他kernel
+                param_count_error_diagnostic = f"""
+# typecheck 参数个数不匹配 for kernel {func_name}
 diagnostics.append({{
     "message": "{e.message}",
     "line": {e.line},
@@ -227,9 +242,20 @@ diagnostics.append({{
     "filename": "{file_path.name}"
 }})
 """
-                # 清空之前的代码部分，只保留head和result定义
-                code_parts = [head, "result = {'hints': [], 'diagnostics': []}", syntax_error_diagnostic]
-                break  # 遇到语法错误后立即停止处理其他kernel
+                code_parts.append(param_count_error_diagnostic)
+            except TypecheckSyntaxError as e:
+                # 语法错误时，记录诊断信息，但继续处理其他kernel
+                syntax_error_diagnostic = f"""
+# typecheck 语法错误 for kernel {func_name}
+diagnostics.append({{
+    "message": "{e.message}",
+    "line": {e.line},
+    "col": {e.col},
+    "filename": "{file_path.name}"
+}})
+"""
+                code_parts.append(syntax_error_diagnostic)
+                # 不再 break，继续处理后续 kernel
             except ValueError as e:
                 # 如果参数未正确注释，添加诊断信息
                 diagnostic_code = f"""
