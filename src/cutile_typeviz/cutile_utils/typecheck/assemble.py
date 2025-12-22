@@ -142,7 +142,7 @@ def var_def_code(kernel: Kernel):
     return code
 
 
-def launch_code(kernel: Kernel):
+def launch_code(kernel: Kernel, file_name: str, start_line: int):
     args = ", ".join(kernel.args_str)
     ops_name = f"ops_{kernel.name}"
     code = f"""
@@ -170,6 +170,16 @@ except TileError as e:
     if e.loc.filename is not None:
         loc_info["filename"] = e.loc.filename
     
+    diagnostics.append(loc_info)
+except Exception as e:
+    # 报告任何其他异常
+    error_msg = str(e).replace('"', "'").replace('\\n', ' ')
+    loc_info = {{
+        "message": f"Unexpected error in kernel '{kernel.name}': {{error_msg}}",
+        "line": {start_line},
+        "col": 0,
+        "filename": "{file_name}"
+    }}
     diagnostics.append(loc_info)
 """
     return code
@@ -230,7 +240,7 @@ def generate_typecheck_code(file_path, uri, module_name="custom_module"):
                     )
 
                 kernel = Kernel(name=func_name, args_str=args_str)
-                code_parts.append(launch_code(kernel))
+                code_parts.append(launch_code(kernel, file_path.name, start_line))
             except TypecheckParamCountError as e:
                 # 参数个数不匹配时，记录诊断信息，但继续处理其他kernel
                 param_count_error_diagnostic = f"""
