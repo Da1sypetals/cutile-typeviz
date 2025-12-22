@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import textwrap
 import inspect
 import hashlib
+import ast
 
 CACHE_DIR_NAME = ".cutile_typeviz"
 TYPECHECK_INFO_FILENAME = "typecheck.json"
@@ -32,23 +33,40 @@ TYPECHECK_START = "<typecheck>"
 TYPECHECK_END = "</typecheck>"
 
 
+class TypecheckSyntaxError(Exception):
+    """当typecheck块中的某一行语法错误时抛出"""
+
+    def __init__(self, line: int, col: int, message: str):
+        super().__init__()
+        self.line = line
+        self.col = col
+        self.message = message
+
+
 def space(n: int):
     return " " * n
 
 
-def parse_typecheck_params(docstring: str | None):
+def parse_typecheck_params(docstring: str | None, source_lines: list[str] = None, func_start_line: int = 0):
     """
     Process a string by:
     1. Splitting by '<typecheck>' and taking the last part
     2. Splitting by '</typecheck>' and taking the first part
     3. Trimming whitespace from the resulting string
     4. Splitting into lines, trimming whitespace from each line, and returning as a list
+    5. Validate each line's Python syntax
 
     Args:
-        s (str): Input string to process
+        docstring: The docstring to process
+        source_lines: Source code lines of the function (for calculating line numbers)
+        func_start_line: The starting line number of the function in the source file
 
     Returns:
         list: List of whitespace-trimmed lines from the extracted content
+
+    Raises:
+        ValueError: If input args is not annotated
+        TypecheckSyntaxError: If a line in the typecheck block has invalid Python syntax
     """
     if docstring is None or TYPECHECK_START not in docstring or TYPECHECK_END not in docstring:
         raise ValueError("Input args is not annotated. Typecheck will not be performed.")
@@ -68,6 +86,34 @@ def parse_typecheck_params(docstring: str | None):
     # Split into lines, trim each line, and filter out empty lines if desired
     # (keeping empty lines that were between non-empty content)
     lines = [line.strip() for line in trimmed_content.splitlines()]
+
+    # 计算typecheck块在源文件中的起始行号
+    typecheck_start_line_in_file = 0
+    if source_lines is not None:
+        # 在源代码中找到 <typecheck> 的位置
+        for i, source_line in enumerate(source_lines):
+            if TYPECHECK_START in source_line:
+                typecheck_start_line_in_file = func_start_line + i
+                break
+
+    # 验证每一行的Python语法
+    for idx, line in enumerate(lines):
+        if len(line.strip()) == 0:
+            continue  # 跳过空行
+
+        try:
+            # 尝试以eval模式解析（表达式）
+            ast.parse(line, mode="eval")
+        except SyntaxError as e:
+            # 计算实际行号：typecheck起始行 + 当前行偏移 + 1（因为<typecheck>占一行）
+            actual_line = typecheck_start_line_in_file + idx + 1
+            col = e.offset - 1 if e.offset else 0
+            raise TypecheckSyntaxError(
+                line=actual_line, col=col, message=f"Invalid Python syntax in typecheck parameter: {e.msg}"
+            )
+
+    # Filter out empty lines
+    lines = [line for line in lines if len(line) > 0]
 
     return lines
 
@@ -143,6 +189,9 @@ def generate_typecheck_code(file_path, uri, module_name="custom_module"):
     # 在main函数开始时定义result变量
     code_parts.append("result = {'hints': [], 'diagnostics': []}")
 
+    # 用于存储语法错误的诊断信息
+    syntax_error_diagnostic = None
+
     for name in module.__dir__():
         item = getattr(module, name)
 
@@ -153,15 +202,34 @@ def generate_typecheck_code(file_path, uri, module_name="custom_module"):
             # print(f"Examining {func_name}")
             pyfunc: Callable = func._pyfunc
 
-            # 获取函数的起始行号
+            # 获取函数的起始行号和源码
             source_lines, start_line = inspect.getsourcelines(pyfunc)
 
             docs = pyfunc.__doc__
 
             try:
-                args_str = parse_typecheck_params(docs)
+                args_str = parse_typecheck_params(docs, source_lines, start_line)
+
+                # 如果之前有语法错误，跳过后续kernel的处理
+                if syntax_error_diagnostic is not None:
+                    continue
+
                 kernel = Kernel(name=func_name, args_str=args_str)
                 code_parts.append(launch_code(kernel))
+            except TypecheckSyntaxError as e:
+                # 语法错误时，记录诊断信息并清空所有其他内容
+                syntax_error_diagnostic = f"""
+# typecheck 语法错误
+diagnostics.append({{
+    "message": "{e.message}",
+    "line": {e.line},
+    "col": {e.col},
+    "filename": "{file_path.name}"
+}})
+"""
+                # 清空之前的代码部分，只保留head和result定义
+                code_parts = [head, "result = {'hints': [], 'diagnostics': []}", syntax_error_diagnostic]
+                break  # 遇到语法错误后立即停止处理其他kernel
             except ValueError as e:
                 # 如果参数未正确注释，添加诊断信息
                 diagnostic_code = f"""
