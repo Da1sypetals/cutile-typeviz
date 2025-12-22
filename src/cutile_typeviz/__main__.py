@@ -712,10 +712,7 @@ def on_python_path_changed(params: Any) -> None:
     """处理 Python 解释器路径变化"""
     old_path = server.python_executable
 
-    if isinstance(params, dict):
-        server.python_executable = params.get("pythonPath")
-    else:
-        server.python_executable = None
+    server.python_executable = getattr(params, "pythonPath", None)
 
     logger.info(f"Python interpreter changed: {old_path} -> {server.python_executable}")
 
