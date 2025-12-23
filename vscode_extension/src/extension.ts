@@ -8,7 +8,8 @@ import {
     ServerOptions,
 } from 'vscode-languageclient/node';
 
-let client: LanguageClient;
+let client: LanguageClient | undefined;
+let currentPythonPath: string | undefined;
 
 /**
  * 获取 Python 扩展选择的解释器路径
@@ -48,23 +49,38 @@ async function getPythonInterpreterPath(): Promise<string | undefined> {
     return undefined;
 }
 
-export async function activate(context: ExtensionContext) {
-    // 获取 Python 解释器路径
-    const pythonPath = await getPythonInterpreterPath();
-
-    // 如果没有 Python 解释器，使用默认的 python 命令
-    const pythonExecutable = pythonPath || 'python';
-
-    console.log(`Using Python interpreter: ${pythonExecutable}`);
-
-    // 检查 cutile_typeviz 包是否已安装
+/**
+ * 检查指定 Python 环境是否安装了 cutile_typeviz
+ * @param pythonExecutable Python 解释器路径
+ * @returns 是否安装
+ */
+function isCutileTypevizInstalled(pythonExecutable: string): boolean {
     try {
         execSync(`${pythonExecutable} -c "import cutile_typeviz"`, { stdio: 'pipe' });
+        return true;
     } catch (error) {
-        window.showErrorMessage('Python library `cutile-typeviz` is not installed in current envorinment. Install it or select a python envorinment with it installed, and restart the plugin.');
-        return;
+        return false;
     }
+}
 
+/**
+ * 停止当前运行的 Language Server
+ */
+async function stopLanguageServer(): Promise<void> {
+    if (client) {
+        console.log('Stopping existing Language Server...');
+        await client.stop();
+        client = undefined;
+        console.log('Language Server stopped');
+    }
+}
+
+/**
+ * 启动 Language Server
+ * @param pythonExecutable Python 解释器路径
+ * @param pythonPath 原始的 Python 路径（用于初始化选项）
+ */
+function startLanguageServer(pythonExecutable: string, pythonPath: string | undefined): void {
     // 服务器选项 - 使用 Python 模块方式启动
     const serverOptions: ServerOptions = {
         run: {
@@ -115,16 +131,49 @@ export async function activate(context: ExtensionContext) {
 
     // 启动客户端，同时启动服务器
     client.start();
+    console.log('Language Server started');
+}
 
-    // 注册 Python 解释器变化监听器
-    await registerPythonInterpreterChangeListener(context);
+/**
+ * 尝试启动或重启 Language Server
+ * 检查当前 Python 环境是否安装了 cutile_typeviz，如果安装则启动服务器
+ * @param pythonPath Python 解释器路径
+ * @param showNotification 是否显示通知消息
+ * @returns 是否成功启动
+ */
+async function tryStartLanguageServer(pythonPath: string | undefined, showNotification: boolean = true): Promise<boolean> {
+    const pythonExecutable = pythonPath || 'python';
 
-    console.log('cutile_typeviz extension activated');
+    // 检查是否安装了 cutile_typeviz
+    if (!isCutileTypevizInstalled(pythonExecutable)) {
+        if (showNotification) {
+            window.showWarningMessage(
+                'Python library `cutile-typeviz` is not installed in current environment. ' +
+                'Install it or select a Python environment with it installed.'
+            );
+        }
+        console.log(`cutile_typeviz not installed in: ${pythonExecutable}`);
+        return false;
+    }
+
+    // 先停止现有的服务器
+    await stopLanguageServer();
+
+    // 启动新的服务器
+    console.log(`Starting Language Server with Python: ${pythonExecutable}`);
+    startLanguageServer(pythonExecutable, pythonPath);
+
+    if (showNotification && currentPythonPath !== pythonPath) {
+        window.showInformationMessage('cuTile Typeviz Language Server started successfully.');
+    }
+
+    currentPythonPath = pythonPath;
+    return true;
 }
 
 /**
  * 注册 Python 解释器变化监听器
- * 当用户在 VS Code 中切换 Python 解释器时，通知 LSP 服务器更新
+ * 当用户在 VS Code 中切换 Python 解释器时，重新检测并尝试启动 LSP 服务器
  */
 async function registerPythonInterpreterChangeListener(context: ExtensionContext): Promise<void> {
     const pythonExtension = extensions.getExtension('ms-python.python');
@@ -160,8 +209,11 @@ async function registerPythonInterpreterChangeListener(context: ExtensionContext
 
             console.log(`Python interpreter changed to: ${newPath}`);
 
-            // 发送配置更新通知给服务器
-            if (client) {
+            // 尝试启动或重启 Language Server
+            const started = await tryStartLanguageServer(newPath, true);
+
+            // 如果服务器已经在运行，也发送配置更新通知
+            if (client && started) {
                 client.sendNotification('cutile/pythonPathChanged', { pythonPath: newPath });
             }
         });
@@ -172,6 +224,22 @@ async function registerPythonInterpreterChangeListener(context: ExtensionContext
     } else {
         console.log('onDidChangeActiveEnvironmentPath not available');
     }
+}
+
+export async function activate(context: ExtensionContext) {
+    // 获取 Python 解释器路径
+    const pythonPath = await getPythonInterpreterPath();
+    const pythonExecutable = pythonPath || 'python';
+
+    console.log(`Using Python interpreter: ${pythonExecutable}`);
+
+    // 先注册 Python 解释器变化监听器（无论是否安装 cutile_typeviz）
+    await registerPythonInterpreterChangeListener(context);
+
+    // 尝试启动 Language Server（如果未安装会显示警告，但不会阻止扩展激活）
+    await tryStartLanguageServer(pythonPath, true);
+
+    console.log('cutile_typeviz extension activated');
 }
 
 export function deactivate(): Thenable<void> | undefined {
