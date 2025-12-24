@@ -119,7 +119,9 @@ def parse_typecheck_params(docstring: str | None, source_lines: list[str] = None
             actual_line = typecheck_start_line_in_file + idx + 1
             col = e.offset - 1 if e.offset else 0
             raise TypecheckSyntaxError(
-                line=actual_line, col=col, message=f"Invalid Python syntax in typecheck parameter: {e.msg}"
+                line=actual_line,
+                col=col + 4,
+                message=f"Invalid Python syntax in typecheck parameter: {e.msg}",
             )
 
     # Filter out empty lines
