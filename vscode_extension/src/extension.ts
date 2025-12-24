@@ -144,8 +144,13 @@ function startLanguageServer(pythonExecutable: string, pythonPath: string | unde
 async function tryStartLanguageServer(pythonPath: string | undefined, showNotification: boolean = true): Promise<boolean> {
     const pythonExecutable = pythonPath || 'python';
 
+    // 先停止现有的服务器
+    await stopLanguageServer();
     // 检查是否安装了 cutile_typeviz
+
     if (!isCutileTypevizInstalled(pythonExecutable)) {
+        currentPythonPath = undefined;
+
         if (showNotification) {
             window.showWarningMessage(
                 'Python library `cutile-typeviz` is not installed in current environment. ' +
@@ -156,8 +161,6 @@ async function tryStartLanguageServer(pythonPath: string | undefined, showNotifi
         return false;
     }
 
-    // 先停止现有的服务器
-    await stopLanguageServer();
 
     // 启动新的服务器
     console.log(`Starting Language Server with Python: ${pythonExecutable}`);
