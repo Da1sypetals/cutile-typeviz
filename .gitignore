@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 ir_artifacts
+.DS_Store
 
 .*.swp
 __pycache__
