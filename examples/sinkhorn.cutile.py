@@ -3,6 +3,7 @@ import cuda.tile as ct
 batch = 2
 seq_len = 1025
 n_stream = 4  # consistent with deepseek paper
+num_iter_cg = n_stream * 2
 
 
 @ct.kernel
@@ -41,7 +42,11 @@ tilesize = 32
 
 
 @ct.function(host=False, tile=True)
-def matvec_A(R, x):  # x: (tilesize, n_stream*2, 1)
+def matvec_A(R, x):
+    """
+    R: (tilesize, n_stream, n_stream)
+    x: (tilesize, n_stream*2, 1)
+    """
     x1 = ct.extract(x, index=(0, 0, 0), shape=(tilesize, n_stream, 1))
     x2 = ct.extract(x, index=(0, 1, 0), shape=(tilesize, n_stream, 1))
     ax1 = x1 + ct.matmul(R, x2)
@@ -55,16 +60,21 @@ def dot(a, b):  # a/b: (..., dim, 1)
 
 
 @ct.kernel
-def sinkhorn_knopp_bwd_implicit(out, dout, res, num_iter):
+def sinkhorn_knopp_bwd_implicit_cg(out, dout, res):
     """
     <typecheck>
     MockTensor((batch, seq_len, n_stream, n_stream), dtype="float32")
     MockTensor((batch, seq_len, n_stream, n_stream), dtype="float32")
     MockTensor((batch, seq_len, n_stream, n_stream), dtype="float32")
-    20
     </typecheck>
 
-    Typically, num_iter = n_stream * 2
+    Side note:
+    1. Number of CG iterations is typically num_streams*2.
+        This is derived from the theoretical properties of CG method.
+    2. Matrix R is typically near-ingular (not full-rank), so the solution of x_sol can be very different from the real solution x_real.
+        However, the outer product of the first half and the second half of x_sol is same with the result of x_real, which **is what we need**.
+        This means the solution set has some mathematical property that applies to every element in it.
+        We shall make use of that property.
     """
 
     i_batch = ct.bid(0)
@@ -101,7 +111,7 @@ def sinkhorn_knopp_bwd_implicit(out, dout, res, num_iter):
     r_normsq = dot(r, r)
 
     # Conjugate Gradients: iter
-    for _ in range(num_iter):
+    for _ in range(num_iter_cg):
         Ap = matvec_A(R, p)
         alpha = r_normsq / dot(p, Ap)
         x += alpha * p
