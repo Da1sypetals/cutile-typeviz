@@ -28,6 +28,7 @@ def _get_sm_arch(compute_capability: tuple[int, int] | None = None) -> str:
 def get_function_repr(
     kernel_func,
     args: list,
+    optimized=False,
 ):
     """
     Get the FunctionIR object after type inference pass.
@@ -39,20 +40,24 @@ def get_function_repr(
     Returns:
         FunctionIR object after type inference
     """
-    from cuda.tile._ast2ir import get_function_ir
-    from cuda.tile._const_utils import get_constant_annotations
-    from cuda.tile._passes.typeinfer import infer_types_pass
 
     pyfunc = kernel_func._pyfunc
 
-    ir_ctx = ir.IRContext()
-    func_ir = get_function_ir(pyfunc, ir_ctx, call_site=None)
+    if optimized:
+        return _get_final_ir(pyfunc, args, default_tile_context)
+    else:
+        from cuda.tile._ast2ir import get_function_ir
+        from cuda.tile._const_utils import get_constant_annotations
+        from cuda.tile._passes.typeinfer import infer_types_pass
 
-    ir_args = func_ir.bind_arguments(args, get_constant_annotations(pyfunc))
+        ir_ctx = ir.IRContext()
+        func_ir = get_function_ir(pyfunc, ir_ctx, call_site=None)
 
-    func_ir = infer_types_pass(func_ir, ir_args, pyfunc, default_tile_context)
+        ir_args = func_ir.bind_arguments(args, get_constant_annotations(pyfunc))
 
-    return func_ir
+        func_ir = infer_types_pass(func_ir, ir_args, pyfunc, default_tile_context)
+
+        return func_ir
 
 
 def dump_typechecked_ir(

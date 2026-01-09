@@ -33,6 +33,10 @@ What it does:
     - The plugin works by including your source code into a template script and running the `cuTile` compiler frontend with mock inputs, so you may avoid running redundant code with this annotation.
     - See `sample02.cutile.py` for an example.
 
+### Usage: Dump IR
+```bash
+PYTHONPATH=src/cutile_typeviz/cutile_utils python examples/run_sinkhorn.cutile.py
+```
 
 
 ## TODO
