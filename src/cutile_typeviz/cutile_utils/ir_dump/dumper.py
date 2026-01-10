@@ -44,7 +44,10 @@ def get_function_repr(
     pyfunc = kernel_func._pyfunc
 
     if optimized:
-        return _get_final_ir(pyfunc, args, default_tile_context)
+        from cutile_typeviz.cutile_utils.ir_dump.extra_passes import eliminate_bound
+        func_ir = _get_final_ir(pyfunc, args, default_tile_context)
+        eliminate_bound(func_ir)
+        return func_ir
     else:
         from cuda.tile._ast2ir import get_function_ir
         from cuda.tile._const_utils import get_constant_annotations

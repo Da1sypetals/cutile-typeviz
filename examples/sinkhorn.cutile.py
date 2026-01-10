@@ -116,7 +116,7 @@ def sinkhorn_knopp_bwd_implicit_cg(out, dout, res):
     r_normsq = dot(r, r)
 
     # Conjugate Gradients: iter
-    for _ in range(num_iter_cg):
+    for it in range(num_iter_cg):
         Ap = matvec_A(R, p)
         pAp = dot(p, Ap)
         # VERY important to avoid divide by zero
@@ -124,11 +124,33 @@ def sinkhorn_knopp_bwd_implicit_cg(out, dout, res):
         x += alpha * p
         r -= alpha * Ap
         r_new_normsq = dot(r, r)
+
+        if (ct.sum(r_new_normsq) / tilesize).astype(ct.int32):
+            continue
+
         # not very important to avoid divide by zero, but it's good to have it
         beta = r_new_normsq / (r_normsq + EPS)
         p = r + beta * p
         r_normsq = r_new_normsq
     # End solve: Ax=b =========================================
+
+    it = 8
+    while it > 0:
+        Ap = matvec_A(R, p)
+        pAp = dot(p, Ap)
+        # VERY important to avoid divide by zero
+        alpha = r_normsq / (pAp + EPS)
+        x += alpha * p
+        r -= alpha * Ap
+        r_new_normsq = dot(r, r)
+
+        if (ct.sum(r_new_normsq) / tilesize).astype(ct.int32):
+            it -= 1
+
+        # not very important to avoid divide by zero, but it's good to have it
+        beta = r_new_normsq / (r_normsq + EPS)
+        p = r + beta * p
+        r_normsq = r_new_normsq
 
     x1 = ct.extract(x, index=(0, 0, 0), shape=(tilesize, n_stream, 1))
     x2 = ct.extract(x, index=(0, 1, 0), shape=(tilesize, n_stream, 1))
@@ -147,3 +169,27 @@ def sinkhorn_knopp_bwd_implicit_cg(out, dout, res):
 
 
 # cutile-typeviz: end
+
+
+from cutile_typeviz.cutile_utils.ir_dump.mock_tensor import MockTensor
+from cutile_typeviz.cutile_utils.ir_dump.dumper import get_function_repr
+
+out = MockTensor((batch, seq_len, n_stream, n_stream), dtype="float32")
+dout = MockTensor((batch, seq_len, n_stream, n_stream), dtype="float32")
+res = MockTensor((batch, seq_len, n_stream, n_stream), dtype="float32")
+
+func_repr = get_function_repr(
+    sinkhorn_knopp_bwd_implicit_cg,
+    [out, dout, res],
+    optimized=True,
+)
+
+cutileir = func_repr.to_string(include_loc=False)
+
+ir_dir = Path.cwd() / "ir_artifacts"
+ir_dir.mkdir(exist_ok=True)
+
+ir_path = ir_dir / "sinkhorn_knopp_bwd_implicit_cg.cutileir"
+ir_path.write_text(cutileir)
+
+print(f"CuTile IR saved to {ir_path}")
