@@ -153,6 +153,28 @@ class NumpyTranspiler:
         # Constants are created via typed_const.
         return self.get_operand(op, name)
 
+    # --- Global array attributes Handlers ---
+    # Note: array.ndim is static
+
+    def handle_get_array_strides(self, op):
+        res = self.get_result_var(op)
+        operand = self.get_var_name(op["operands"]["array"]["name"])
+
+        self.emit(f"{res} = {operand}.strides")
+
+    def handle_get_array_shape(self, op):
+        res = self.get_result_var(op)
+        operand = self.get_var_name(op["operands"]["value"]["name"])
+
+        self.emit(f"{res} = {operand}.shape")
+
+    def handle_tuple_item(self, op):
+        res = self.get_result_var(op)
+        x = self.get_var_name(op["operands"]["x"]["name"])
+        index: int = op["attributes"]["index"]
+
+        self.emit(f"{res} = {x}[{index}]")
+
     # --- Op Handlers ---
 
     def handle_tile_bid(self, op):
@@ -360,7 +382,7 @@ class NumpyTranspiler:
                 self.emit(f"{res} = {lhs} // {rhs}")
             case "cdiv":
                 # ceil division
-                self.emit(f"{res} = np.ceil({lhs} / {rhs}).astype({lhs}.dtype)")
+                self.emit(f"{res} = ({lhs} + {rhs} - 1) // {rhs}")
             case "truediv":
                 self.emit(f"{res} = {lhs} / {rhs}")
             case "mod":
@@ -593,7 +615,7 @@ class NumpyTranspiler:
         else:
             np_dtype = "np.float32"  # Fallback
 
-        self.emit(f"{res} = {x}.astype({np_dtype})")
+        self.emit(f"{res} = np.array({x}).astype({np_dtype})")
 
     def handle_tile_item(self, op):
         res = self.get_result_var(op)

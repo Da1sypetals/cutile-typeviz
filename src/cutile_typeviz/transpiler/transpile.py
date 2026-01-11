@@ -6,18 +6,75 @@ from cutile_typeviz.transpiler.numpy_transpiler import NumpyTranspiler
 from cutile_typeviz.transpiler.logging import get_logger
 from pathlib import Path
 import json
+import tempfile
+import importlib.util
+import sys
 
 logger = get_logger(__name__)
 
 
 def get_tensor_metadata(args: list[np.ndarray]):
-    result = []
+    results = list(args)
+    for i, arg in enumerate(results):
+        if isinstance(arg, np.ndarray):
+            results[i] = MockTensor(arg.shape, arg.dtype.name)
 
-    for arg in args:
-        assert isinstance(arg, np.ndarray), f"args must be a list of numpy arrays, got {type(arg)}"
-        result.append(MockTensor(arg.shape, arg.dtype.name))
+    return results
 
-    return result
+
+def launch_numpy(
+    kernel,
+    args: list[np.ndarray],
+    grid: tuple[int, int, int],
+    tmp_dir: str | None = None,
+):
+    """
+    Transpile and launch a CuTile kernel on NumPy.
+
+    Args:
+        kernel: The CuTile kernel function to transpile
+        args: List of numpy arrays as kernel arguments
+        grid: Tuple (grid_x, grid_y, grid_z) specifying the grid dimensions
+        tmp_dir: Optional temporary directory for transpiled code. If None, creates a temp dir.
+    """
+    # Create temporary directory if not provided
+    if tmp_dir is None:
+        tmp_dir = tempfile.mkdtemp(prefix="cutile_numpy_")
+        logger.info(f"Created temporary directory: {tmp_dir}")
+
+    # Transpile kernel to NumPy code
+    transpile(
+        kernel,
+        args,
+        out_dir=tmp_dir,
+        save_cutileir=True,
+        save_json=True,
+        save_kernel=True,
+    )
+
+    # Dynamically import the generated module
+    numpy_code_path = Path(tmp_dir) / "numpy_code.py"
+    module_name = f"cutile_numpy_{kernel._pyfunc.__name__}"
+
+    # Load the module from file
+    spec = importlib.util.spec_from_file_location(module_name, numpy_code_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Failed to load module from {numpy_code_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+
+    # Get the generated function
+    func_name = kernel._pyfunc.__name__
+    if not hasattr(module, func_name):
+        raise AttributeError(f"Module does not contain function '{func_name}'")
+
+    numpy_func = getattr(module, func_name)
+
+    # Call the function with args and grid
+    logger.info(f"Launching {func_name} with grid={grid}")
+    numpy_func(*args, grid=grid)
 
 
 def transpile(
@@ -29,8 +86,7 @@ def transpile(
     save_kernel: bool = True,
 ):
     # Convert numpy arrays to MockTensor if necessary
-    if isinstance(args[0], np.ndarray):
-        args = get_tensor_metadata(args)
+    args = get_tensor_metadata(args)
 
     # Create output directory
     out_dir = Path(out_dir).resolve()

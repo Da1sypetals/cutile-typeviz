@@ -29,8 +29,6 @@ def batch_matmul_kernel(A, B, C, tm: ConstInt, tn: ConstInt, tk: ConstInt):
     pidx = ct.bid(1)  # M dimension
     pidy = ct.bid(2)  # N dimension
 
-    rng = ct.arange(64, dtype=ct.uint32).reshape((8, 8))
-
     # Calculate number of K tiles
     # A is (Batch, M, K), so K is axis 2
     # Use A.shape[2] for the total K dimension and ct.cdiv for ceiling division
@@ -67,3 +65,32 @@ def batch_matmul_kernel(A, B, C, tm: ConstInt, tn: ConstInt, tk: ConstInt):
     # Store with 3D index and 3D shape, C is (Batch, M, N)
     result_3d = ct.reshape(result, (1, tm, tn))
     ct.store(C, index=(pid_batch, pidx, pidy), tile=result_3d)
+
+
+# cutile-typeviz: end
+
+import numpy as np
+from cutile_typeviz.transpiler import launch_numpy
+from pathlib import Path
+
+a = np.random.randn(BATCH_DIM, M_DIM, K_DIM).astype(np.float32)
+b = np.random.randn(BATCH_DIM, K_DIM, N_DIM).astype(np.float32)
+c = np.zeros((BATCH_DIM, M_DIM, N_DIM), dtype=np.float32)
+
+tm = 32
+tn = 64
+tk = 128
+
+tmp_dir = Path("ir_artifacts") / "matmul"
+
+launch_numpy(
+    batch_matmul_kernel,
+    [a, b, c, tm, tn, tk],
+    grid=(BATCH_DIM, M_DIM // tm, N_DIM // tn),
+    tmp_dir=tmp_dir,
+)
+
+expected = np.matmul(a, b)
+
+mae = np.abs(expected - c).mean()
+print(f"MAE: {mae}")
