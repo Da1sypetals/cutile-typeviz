@@ -5,6 +5,6 @@ os.environ["PYTHONPATH"] = "src/cutile_typeviz/cutile_utils/"
 
 
 subprocess.run(
-    ["python", "examples/sinkhorn.cutile.py"],
+    ["python", "examples/run_numpy_transpiler.py"],
     check=True,
 )

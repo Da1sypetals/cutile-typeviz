@@ -1,6 +1,26 @@
-from pathlib import Path
-import cutile_typeviz.cutile_utils.cuda.tile as ct
+"""
+Example usage of the transpiler module.
 
+This script demonstrates how to:
+1. Get optimized IR from a kernel function
+2. Eliminate tokens from the IR
+3. Convert the IR to JSON format
+
+Run with:
+    cd /Users/daisy/develop/cutile-typeviz
+    python src/cutile_typeviz/transpiler/example.py
+"""
+
+import os
+import sys
+from pathlib import Path
+
+# Add parent directory to path to find cutile_typeviz
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from cutile_typeviz.cutile_utils.ir_dump.mock_tensor import MockTensor
+from cutile_typeviz.transpiler import transpile
+import cutile_typeviz.cutile_utils.cuda.tile as ct
 
 batch = 2
 seq_len = 1025
@@ -8,6 +28,7 @@ n_stream = 4  # consistent with deepseek paper
 num_iter_cg = n_stream * 2
 
 EPS = 1e-10
+tilesize = 32
 
 
 @ct.kernel
@@ -30,6 +51,9 @@ def sinkhorn_knopp(mat, out, num_iter, tilesize: ct.Constant[int]):
     )
 
     tile = ct.exp(tile)
+    # tile = -tile
+    # tile = ct.sinh(tile)
+    # tt = ct.zeros(tile.shape, dtype=ct.bool_)
 
     for _ in range(num_iter):
         tile = tile / ct.sum(tile, axis=-2, keepdims=True)
@@ -40,9 +64,6 @@ def sinkhorn_knopp(mat, out, num_iter, tilesize: ct.Constant[int]):
         index=(i_batch, i_seq, 0, 0),
         tile=tile,
     )
-
-
-tilesize = 32
 
 
 @ct.function(host=False, tile=True)
@@ -130,24 +151,6 @@ def sinkhorn_knopp_bwd_implicit_cg(out, dout, res):
         r_normsq = r_new_normsq
     # End solve: Ax=b =========================================
 
-    it = 8
-    while it > 0:
-        Ap = matvec_A(R, p)
-        pAp = dot(p, Ap)
-        # VERY important to avoid divide by zero
-        alpha = r_normsq / (pAp + EPS)
-        x += alpha * p
-        r -= alpha * Ap
-        r_new_normsq = dot(r, r)
-
-        if (ct.sum(r_new_normsq) / tilesize).astype(ct.int32):
-            it -= 1
-
-        # not very important to avoid divide by zero, but it's good to have it
-        beta = r_new_normsq / (r_normsq + EPS)
-        p = r + beta * p
-        r_normsq = r_new_normsq
-
     x1 = ct.extract(x, index=(0, 0, 0), shape=(tilesize, n_stream, 1))
     x2 = ct.extract(x, index=(0, 1, 0), shape=(tilesize, n_stream, 1))
 
@@ -156,6 +159,7 @@ def sinkhorn_knopp_bwd_implicit_cg(out, dout, res):
 
     res_tile = dR - x1_expanded - x2_expanded
     res_tile = res_tile * R
+    res_tile = res_tile.reshape((1, tilesize, n_stream, n_stream))
 
     ct.store(
         res,
@@ -167,25 +171,22 @@ def sinkhorn_knopp_bwd_implicit_cg(out, dout, res):
 # cutile-typeviz: end
 
 
-from cutile_typeviz.cutile_utils.ir_dump.mock_tensor import MockTensor
-from cutile_typeviz.cutile_utils.ir_dump.dumper import get_function_repr
+def main():
+    print("Transpiler Example")
+    print("-" * 30)
+    print()
 
-out = MockTensor((batch, seq_len, n_stream, n_stream), dtype="float32")
-dout = MockTensor((batch, seq_len, n_stream, n_stream), dtype="float32")
-res = MockTensor((batch, seq_len, n_stream, n_stream), dtype="float32")
+    out = MockTensor((batch, seq_len, n_stream, n_stream), dtype="float32")
+    dout = MockTensor((batch, seq_len, n_stream, n_stream), dtype="float32")
+    res = MockTensor((batch, seq_len, n_stream, n_stream), dtype="float32")
+    num_iter = 24
 
-func_repr = get_function_repr(
-    sinkhorn_knopp_bwd_implicit_cg,
-    [out, dout, res],
-    optimized=True,
-)
+    out_dir = Path.cwd() / "ir_artifacts"
+    out_dir.mkdir(exist_ok=True)
 
-cutileir = func_repr.to_string(include_loc=False)
+    transpile(sinkhorn_knopp, [out, res, num_iter, tilesize], out_dir / "sinkhorn_knopp")
+    transpile(sinkhorn_knopp_bwd_implicit_cg, [out, dout, res], out_dir / "sinkhorn_knopp_bwd_implicit_cg")
 
-ir_dir = Path.cwd() / "ir_artifacts"
-ir_dir.mkdir(exist_ok=True)
 
-ir_path = ir_dir / "sinkhorn_knopp_bwd_implicit_cg.cutileir"
-ir_path.write_text(cutileir)
-
-print(f"CuTile IR saved to {ir_path}")
+if __name__ == "__main__":
+    main()
