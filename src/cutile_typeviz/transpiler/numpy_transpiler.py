@@ -1,6 +1,9 @@
 import json
 import re
 import numpy as np
+from cutile_typeviz.transpiler.logging import get_logger
+
+logger = get_logger(__name__)
 
 # FATAL: EVERY unimplemented or unsupported feature should raise an error.
 # DO NOT silently ignore or skip of fallback for unsupported features.
@@ -13,6 +16,9 @@ class NumpyTranspiler:
         self.indent_level = 0
         self.var_map = {}  # Map IR var names to Python var names
         self.imports = set(["import numpy as np", "import itertools"])
+        self.constants = {
+            "inf": "np.inf",
+        }
         self.loop_stack = []  # Stack of {carried_names: [], result_names: []}
         self.block_vars = {}  # Map axis to block variable name
         self.grid_dims = (0, 0, 0)  # Will be set from grid parameter
@@ -42,6 +48,10 @@ class NumpyTranspiler:
         # Add imports
         for imp in sorted(list(self.imports)):
             self.emit(imp)
+        self.emit("")
+
+        for constant in sorted(list(self.constants)):
+            self.emit(f"{constant} = {self.constants[constant]}")
         self.emit("")
 
         # Generate internal tile function (without block loops)
@@ -231,6 +241,8 @@ class NumpyTranspiler:
         res = self.get_result_var(op)
         arr = self.get_operand(op, "array")
         idx = self.get_operand(op, "index")
+        order: list[int] = op["attributes"]["order"]
+        ndim = len(order)
 
         # Parse tile shape from result type
         # Result type str: "Tile[float32,(1,32,4,4)]"
@@ -242,10 +254,12 @@ class NumpyTranspiler:
         else:
             shape = []  # Should not happen
 
-        slice_parts = []
+        assert len(shape) == ndim, f"Shape mismatch with order: {shape = }, {order = }"
+
+        slice_parts = [None for _ in range(ndim)]
         for i, s in enumerate(shape):
-            # slice_parts.append(f"{idx}[{i}]:{idx}[{i}]+{s}")
-            slice_parts.append(f"{idx}[{i}] * {s} : {idx}[{i}] * {s} + {s}")
+            order_index = order[i]
+            slice_parts[order_index] = f"{idx}[{i}] * {s} : {idx}[{i}] * {s} + {s}"
 
         slice_str = ", ".join(slice_parts)
         self.emit(f"{res} = {arr}[{slice_str}]")
@@ -254,6 +268,11 @@ class NumpyTranspiler:
         arr = self.get_operand(op, "array")
         idx = self.get_operand(op, "index")
         tile = self.get_operand(op, "tile")
+        order: list[int] = op["attributes"]["order"]
+
+        logger.info(f"{order = }")
+
+        ndim = len(order)
 
         tile_type_str = op["operands"]["tile"]["type"]["str"]
         shape_match = re.search(r"\(([\d,]+)\)", tile_type_str)
@@ -263,9 +282,13 @@ class NumpyTranspiler:
         else:
             shape = []
 
-        slice_parts = []
+        assert len(shape) == ndim, f"Shape mismatch with order: {shape = }, {order = }"
+
+        slice_parts = [None for _ in range(ndim)]
         for i, s in enumerate(shape):
-            slice_parts.append(f"{idx}[{i}] * {s} : {idx}[{i}] * {s} + {s}")
+            order_index = order[i]
+            logger.info(f"{order_index = }")
+            slice_parts[order_index] = f"{idx}[{i}] * {s} : {idx}[{i}] * {s} + {s}"
 
         slice_str = ", ".join(slice_parts)
         self.emit(f"{arr}[{slice_str}] = {tile}")
@@ -395,7 +418,24 @@ class NumpyTranspiler:
                 self.emit(f"{res} = np.maximum({lhs}, {rhs})")
             case "c_mod":
                 # C-style modulo
-                raise NotImplementedError("C-style modulo is not implemented yet")
+                # raise NotImplementedError("C-style modulo is not implemented yet")
+                self.emit(f"{res} = {lhs} % {rhs}")
+            case _:
+                raise TypeError(f"Unknown binary op: {fn}")
+
+    def handle_raw_binary_bitwise(self, op):
+        res = self.get_result_var(op)
+        lhs = self.get_operand(op, "lhs")
+        rhs = self.get_operand(op, "rhs")
+        fn = op["attributes"]["fn"]
+
+        match fn:
+            case "and_":
+                self.emit(f"{res} = {lhs} & {rhs}")
+            case "or_":
+                self.emit(f"{res} = {lhs} | {rhs}")
+            case "xor":
+                self.emit(f"{res} = {lhs} ^ {rhs}")
             case _:
                 raise TypeError(f"Unknown binary op: {fn}")
 
@@ -432,6 +472,15 @@ class NumpyTranspiler:
 
         # MMA: D = A * B + C
         self.emit(f"{res} = np.matmul({x}, {y}) + {acc}")
+
+    def handle_raw_where(self, op):
+        res = self.get_result_var(op)
+        cond = self.get_operand(op, "cond")
+        x = self.get_operand(op, "x")
+        y = self.get_operand(op, "y")
+        print(f"{y = }")
+
+        self.emit(f"{res} = np.where({cond}, {x}, {y})")
 
     def handle_scalar_to_tile(self, op):
         res = self.get_result_var(op)
