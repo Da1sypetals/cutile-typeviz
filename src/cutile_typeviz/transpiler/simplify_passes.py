@@ -13,6 +13,7 @@ from cuda.tile._ir.ops import (
     TileReduce,
     TileArgReduce,
 )
+from cuda.tile._ir.type import TileTy
 
 
 def simplify_for_numpy(func: ir.Function):
@@ -26,20 +27,19 @@ def _add_keepdim(block: ir.Block):
     If the ndim of input are the same as the ndim of output, add keepdims=True;
     otherwise, add keepdims=False.
     """
-    from cuda.tile._ir.type import TileTy
-    
+
     for op in block:
         if isinstance(op, TileReduce) or isinstance(op, TileArgReduce):
             x = op.x
             result_var = op.result_var
-            
+
             x_type = x.get_type()
             res_type = result_var.get_type()
-            
+
             if isinstance(x_type, TileTy) and isinstance(res_type, TileTy):
                 keepdims = x_type.ndim == res_type.ndim
                 op.attributes["keepdims"] = keepdims
-        
+
         # Process nested blocks
         for nested_block in op.nested_blocks:
             _add_keepdim(nested_block)

@@ -159,7 +159,9 @@ np_sinkhorn = np.zeros_like(M_np)
 sinkhorn_knopp(M_np, np_sinkhorn, iters, 32, grid=(1, batch // 32, 1))
 mae = torch.from_numpy(np_sinkhorn).sub(R).abs().mean()
 print(f"{mae = }")
-ic(R[0, :3, :3])
+# set print precision to 0.001
+np.set_printoptions(precision=3)
+ic(R_np[0, :3, :3])
 ic(np_sinkhorn[0, :3, :3])
 print("\n\n")
 
