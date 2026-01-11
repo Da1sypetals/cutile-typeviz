@@ -2,6 +2,9 @@ import json
 import re
 import numpy as np
 
+# FATAL: EVERY unimplemented or unsupported feature should raise an error.
+# DO NOT silently ignore or skip of fallback for unsupported features.
+
 
 class NumpyTranspiler:
     def __init__(self, json_data: dict):
@@ -21,8 +24,7 @@ class NumpyTranspiler:
     def get_var_name(self, ir_name):
         # Convert $123 to _123, etc.
         # Function args like 'out' stay 'out'.
-        # Loop vars like 'it.1' -> 'it_1'
-        # clean_name = ir_name.replace("$", "_").replace(".", "_")
+        # Loop vars like 'it.1' -> 'it', dropping the version identifier after '.'
 
         clean_name = ir_name
         if clean_name.startswith("$"):
@@ -46,7 +48,7 @@ class NumpyTranspiler:
         self.tile_func_name = f"{func_name}_tile"
         param_names = [self.get_var_name(p["name"]) for p in params]
         # Internal tile function takes block indices as parameters instead of grid
-        tile_param_str = ", ".join(param_names + ["block_0=0", "block_1=0", "block_2=0"])
+        tile_param_str = ", ".join(param_names + ["block_0: int", "block_1: int", "block_2: int"])
         self.emit(f"def {self.tile_func_name}({tile_param_str}):")
         self.indent_level += 1
 
@@ -334,10 +336,6 @@ class NumpyTranspiler:
                 np_fn = "np.ceil"
             case "rsqrt":
                 np_fn = "np.rsqrt"
-            case "floor":
-                np_fn = "np.floor"
-            case "ceil":
-                np_fn = "np.ceil"
             case "invert":
                 np_fn = "~"
             case _:
@@ -351,21 +349,33 @@ class NumpyTranspiler:
         rhs = self.get_operand(op, "rhs")
         fn = op["attributes"]["fn"]
 
-        op_map = {
-            "add": "+",
-            "sub": "-",
-            "mul": "*",
-            "div": "/",
-            "truediv": "/",
-            "mod": "%",
-            "pow": "**",
-        }
-
-        if fn in op_map:
-            self.emit(f"{res} = {lhs} {op_map[fn]} {rhs}")
-        else:
-            self.emit(f"# Unknown binary op: {fn}")
-            self.emit(f"{res} = {lhs} # Fallback")
+        match fn:
+            case "add":
+                self.emit(f"{res} = {lhs} + {rhs}")
+            case "sub":
+                self.emit(f"{res} = {lhs} - {rhs}")
+            case "mul":
+                self.emit(f"{res} = {lhs} * {rhs}")
+            case "floordiv":
+                self.emit(f"{res} = {lhs} // {rhs}")
+            case "cdiv":
+                # ceil division
+                self.emit(f"{res} = np.ceil({lhs} / {rhs}).astype({lhs}.dtype)")
+            case "truediv":
+                self.emit(f"{res} = {lhs} / {rhs}")
+            case "mod":
+                self.emit(f"{res} = {lhs} % {rhs}")
+            case "pow":
+                self.emit(f"{res} = {lhs} ** {rhs}")
+            case "min":
+                self.emit(f"{res} = np.minimum({lhs}, {rhs})")
+            case "max":
+                self.emit(f"{res} = np.maximum({lhs}, {rhs})")
+            case "c_mod":
+                # C-style modulo
+                raise NotImplementedError("C-style modulo is not implemented yet")
+            case _:
+                raise TypeError(f"Unknown binary op: {fn}")
 
     def handle_tile_reduce(self, op):
         res = self.get_result_var(op)
@@ -387,7 +397,6 @@ class NumpyTranspiler:
                 np_fn = "np.argmax"
             case "argmin":
                 np_fn = "np.argmin"
-            # default
             case _:
                 raise TypeError(f"Unknown reduce op: {fn}")
 
@@ -400,12 +409,6 @@ class NumpyTranspiler:
         acc = self.get_operand(op, "acc")
 
         # MMA: D = A * B + C
-        # But shapes might need adjusting for np.matmul
-        # A: (M, K), B: (N, K) or (K, N)?
-        # Cutile MMA usually implies specific layouts.
-        # Assuming standard matmul semantics for now: x @ y + acc
-        # But x and y might be higher rank tiles.
-        # Usually MMA operates on the last two dims?
         self.emit(f"{res} = np.matmul({x}, {y}) + {acc}")
 
     def handle_scalar_to_tile(self, op):
@@ -534,6 +537,8 @@ class NumpyTranspiler:
                     for res, out in zip(result_vars, outputs):
                         if out:  # Only assign if there's an output
                             self.emit(f"{res} = {out}")
+                        else:
+                            raise ValueError(f"Missing output for result var {res}")
 
         self.indent_level -= 1
 
@@ -573,10 +578,7 @@ class NumpyTranspiler:
     def handle_tile_astype(self, op):
         res = self.get_result_var(op)
         x = self.get_operand(op, "x")
-        # dtype in attributes?
-        # IR structure: tile_astype(x=..., dtype=...)
-        # But 'dtype' attribute usually stores the type info.
-        # Check attribute "dtype". It might be a dict {"type": ..., "str": ...}
+
         dtype_attr = op["attributes"].get("dtype")
         if isinstance(dtype_attr, dict):
             dtype_str = dtype_attr.get("str", "float32")  # fallback
@@ -604,16 +606,22 @@ class NumpyTranspiler:
         rhs = self.get_operand(op, "rhs")
         fn = op["attributes"]["fn"]
 
-        op_map = {
-            "eq": "==",
-            "ne": "!=",
-            "lt": "<",
-            "le": "<=",
-            "gt": ">",
-            "ge": ">=",
-        }
+        match fn:
+            case "eq":
+                op_str = "=="
+            case "ne":
+                op_str = "!="
+            case "lt":
+                op_str = "<"
+            case "le":
+                op_str = "<="
+            case "gt":
+                op_str = ">"
+            case "ge":
+                op_str = ">="
+            case _:
+                raise TypeError(f"Unknown raw cmp op: {fn}")
 
-        op_str = op_map.get(fn, "==")
         self.emit(f"{res} = {lhs} {op_str} {rhs}")
 
     def handle_continue(self, op):
@@ -629,7 +637,7 @@ class NumpyTranspiler:
                 for name, val in zip(carried_names, next_vars):
                     self.emit(f"{name} = {val}")
             else:
-                self.emit(f"# Warning: continue vars count mismatch {len(next_vars)} vs {len(carried_names)}")
+                raise ValueError(f"continue vars count mismatch {len(next_vars)} vs {len(carried_names)}")
 
         self.emit("continue")
 
@@ -646,7 +654,7 @@ class NumpyTranspiler:
                 for name, val in zip(result_names, output_vars):
                     self.emit(f"{name} = {val}")
             else:
-                self.emit(f"# Warning: break vars count mismatch {len(output_vars)} vs {len(result_names)}")
+                raise ValueError(f"break vars count mismatch {len(output_vars)} vs {len(result_names)}")
 
         self.emit("break")
 

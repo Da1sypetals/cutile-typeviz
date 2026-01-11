@@ -3,16 +3,11 @@ from cutile_typeviz.cutile_utils.ir_dump.dumper import get_function_repr
 from cutile_typeviz.cutile_utils.ir_dump.mock_tensor import MockTensor
 from cutile_typeviz.transpiler import simplify_for_numpy, serialize_function
 from cutile_typeviz.transpiler.numpy_transpiler import NumpyTranspiler
+from cutile_typeviz.transpiler.logging import get_logger
 from pathlib import Path
 import json
-import sys
-import logging
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-handler = logging.StreamHandler(sys.stdout)
-handler.setLevel(logging.INFO)
-logger.addHandler(handler)
+logger = get_logger(__name__)
 
 
 def get_tensor_metadata(args: list[np.ndarray]):
@@ -29,25 +24,29 @@ def transpile(
     kernel,
     args: list[np.ndarray] | list[MockTensor],
     out_dir: str,
-    save_ir: bool = True,
+    save_cutileir: bool = True,
     save_json: bool = True,
     save_kernel: bool = True,
 ):
+    # Convert numpy arrays to MockTensor if necessary
     if isinstance(args[0], np.ndarray):
         args = get_tensor_metadata(args)
 
+    # Create output directory
     out_dir = Path(out_dir).resolve()
     out_dir.mkdir(exist_ok=True, parents=True)
 
+    # Generate function representation
     func_repr = get_function_repr(kernel, args, optimized=True)
     simplify_for_numpy(func_repr)
 
-    if save_ir:
+    if save_cutileir:
         ir_path = out_dir / f"{kernel._pyfunc.__name__}.cutileir"
         with open(ir_path, "w") as f:
             f.write(func_repr.to_string(include_loc=False))
         logger.info(f"cuTileIR saved to {ir_path}")
 
+    # Serialize function to dictionary
     func_dict = serialize_function(func_repr)
 
     if save_json:
@@ -56,6 +55,7 @@ def transpile(
             json.dump(func_dict, f, indent=2)
         logger.info(f"Intermediate JSON results saved to {json_path}")
 
+    # Transpile serialized dictionary to NumPy code
     transpiler = NumpyTranspiler(func_dict)
     code = transpiler.transpile()
 

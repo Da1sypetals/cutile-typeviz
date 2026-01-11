@@ -51,9 +51,9 @@ def sinkhorn_knopp(mat, out, num_iter, tilesize: ct.Constant[int]):
     )
 
     tile = ct.exp(tile)
+
     # tile = -tile
     # tile = ct.sinh(tile)
-    # tt = ct.zeros(tile.shape, dtype=ct.bool_)
 
     for _ in range(num_iter):
         tile = tile / ct.sum(tile, axis=-2, keepdims=True)

@@ -157,7 +157,10 @@ R_np = R.detach().numpy()
 np_sinkhorn = np.zeros_like(M_np)
 
 sinkhorn_knopp(M_np, np_sinkhorn, iters, 32, grid=(1, batch // 32, 1))
-mae = torch.from_numpy(np_sinkhorn).sub(R).abs().mean()
+np_sinkhorn = np_sinkhorn.squeeze(0)
+
+# Compare
+mae = torch.from_numpy(np_sinkhorn).sub(R).abs().mean().item()
 print(f"{mae = }")
 # set print precision to 0.001
 np.set_printoptions(precision=3)
