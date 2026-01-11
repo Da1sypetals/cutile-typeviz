@@ -7,7 +7,7 @@ import numpy as np
 INV_LOG2 = 1.0 / math.log(2)
 
 Batch = 5
-Sequence = 16384
+Sequence = 1024
 Head = 16
 HeadKV = 4
 Dim = 128
@@ -65,12 +65,15 @@ def flash_sdpa(
     t_c = ct.cdiv(k.shape[1], bc)
     for j in range(t_c):  # type: ignore
         # load (k_j)^T and v_j
-        k_jt = ct.load(
-            k,
-            index=(bid_b, 0, bid_hkv, j),
-            shape=(1, d, 1, bc),
-            order=(0, 3, 2, 1),  # transpose here
-        ).reshape((d, bc))
+        k_jt = (
+            ct.load(
+                k,
+                index=(bid_b, j, bid_hkv, 0),
+                shape=(1, bc, 1, d),
+            )
+            .reshape((bc, d))
+            .transpose()
+        )
 
         v_j = ct.load(
             v,
@@ -104,87 +107,42 @@ def flash_sdpa(
     ct.store(o, index=(bid_b, bid_s, bid_h, 0), tile=o_i)
 
 
-# cutile-typeviz: END
+# cutile-typeviz: end
+
+import numpy as np
+from cutile_typeviz.transpiler import launch_numpy
+from pathlib import Path
+import torch
+from icecream import ic
+
+q = np.random.uniform(low=0.0, high=4.0, size=(Batch, Sequence, Head, Dim)).astype(np.float32)
+k = np.random.uniform(low=0.0, high=4.0, size=(Batch, Sequence, HeadKV, Dim)).astype(np.float32)
+v = np.random.uniform(low=0.0, high=4.0, size=(Batch, Sequence, HeadKV, Dim)).astype(np.float32)
+out = np.zeros_like(q)
+
+br = 32
+bc = 64
+
+tmp_dir = Path("ir_artifacts") / "sdpa"
+
+launch_numpy(
+    flash_sdpa,
+    [q, k, v, out, Dim ** (-0.5), Groups, br, bc, Head, Dim],
+    grid=(Batch * Head, Sequence // br, 1),
+    tmp_dir=tmp_dir,
+)
 
 
-@ct.kernel
-def apply_rope(
-    q: ct.Array,  # [b, s, h, 2, d // 2]
-    k: ct.Array,  # [b, s, h_kv, 2, d // 2]
-    cos: ct.Array,  # [b, s, 2, d // 2]
-    sin: ct.Array,  # [b, s, 2, d // 2]
-    out_q: ct.Array,
-    out_k: ct.Array,
-    thq: ct.Constant[int],
-    thk: ct.Constant[int],
-    td: ct.Constant[int],
-):
-    """
-    <typecheck>
-    MockTensor((Batch, Sequence, Head, 2, Dim // 2), dtype="bfloat16")
-    MockTensor((Batch, Sequence, HeadKV, 2, Dim // 2), dtype="bfloat16")
-    MockTensor((Batch, Sequence, 2, Dim // 2), dtype="float32")
-    MockTensor((Batch, Sequence, 2, Dim // 2), dtype="float32")
-    MockTensor((Batch, Sequence, Head, 2, Dim // 2), dtype="bfloat16")
-    MockTensor((Batch, Sequence, HeadKV, 2, Dim // 2), dtype="bfloat16")
-    Head
-    HeadKV
-    Dim // 2
-    </typecheck>
-    """
-    bid_b = ct.bid(0)
-    bid_s = ct.bid(1)
+# TODO
 
-    cos_tile_1 = ct.load(
-        cos,
-        index=(bid_b, bid_s, 0, 0),
-        shape=(1, 1, 1, td),
-    ).reshape((1, td))
+q_torch = torch.from_numpy(q).permute(0, 2, 1, 3)  # (b, h, s, d)
+k_torch = torch.from_numpy(k).permute(0, 2, 1, 3)  # (b, h_kv, s_kv, d)
+v_torch = torch.from_numpy(v).permute(0, 2, 1, 3)  # (b, h_kv, s_kv, d)
 
-    cos_tile_2 = ct.load(
-        cos,
-        index=(bid_b, bid_s, 1, 0),
-        shape=(1, 1, 1, td),
-    ).reshape((1, td))
+out_torch = torch.nn.functional.scaled_dot_product_attention(q_torch, k_torch, v_torch, enable_gqa=True)
+expected = out_torch.permute(0, 2, 1, 3).numpy()
 
-    sin_tile_1 = ct.load(
-        sin,
-        index=(bid_b, bid_s, 0, 0),
-        shape=(1, 1, 1, td),
-    ).reshape((1, td))
-
-    sin_tile_2 = ct.load(
-        sin,
-        index=(bid_b, bid_s, 1, 0),
-        shape=(1, 1, 1, td),
-    ).reshape((1, td))
-
-    q_tile_1 = ct.load(q, index=(bid_b, bid_s, 0, 0, 0), shape=(1, 1, thq, 1, td))
-    q_tile_1 = q_tile_1.reshape((thq, td))
-    q_tile_2 = ct.load(q, index=(bid_b, bid_s, 0, 1, 0), shape=(1, 1, thq, 1, td))
-    q_tile_2 = q_tile_2.reshape((thq, td))
-
-    # [q_1, q_2] * [cos_1, cos_2] + [-q_2, q_1] * [sin_1, sin_2]
-    # [q_1cos_1 - q_2sin_1, q_2cos_2 + q_1sin_2]
-    q_1 = q_tile_1 * cos_tile_1 - q_tile_2 * sin_tile_1
-    q_1 = q_1.reshape((1, 1, thq, 1, td)).astype(out_q.dtype)
-    q_2 = q_tile_2 * cos_tile_2 + q_tile_1 * sin_tile_2
-    q_2 = q_2.reshape((1, 1, thq, 1, td)).astype(out_q.dtype)
-
-    ct.store(out_q, index=(bid_b, bid_s, 0, 0, 0), tile=q_1)
-    ct.store(out_q, index=(bid_b, bid_s, 0, 1, 0), tile=q_2)
-
-    k_tile_1 = ct.load(k, index=(bid_b, bid_s, 0, 0, 0), shape=(1, 1, thk, 1, td))
-    k_tile_1 = k_tile_1.reshape((thk, td))
-    k_tile_2 = ct.load(k, index=(bid_b, bid_s, 0, 1, 0), shape=(1, 1, thk, 1, td))
-    k_tile_2 = k_tile_2.reshape((thk, td))
-
-    # [k_1, k_2] * [cos_1, cos_2] + [-k_2, k_1] * [sin_1, sin_2]
-    # [k_1cos_1 - k_2sin_1, k_2cos_2 + k_1sin_2]
-    k_1 = k_tile_1 * cos_tile_1 - k_tile_2 * sin_tile_1
-    k_1 = k_1.reshape((1, 1, thk, 1, td)).astype(out_k.dtype)
-    k_2 = k_tile_2 * cos_tile_2 + k_tile_1 * sin_tile_2
-    k_2 = k_2.reshape((1, 1, thk, 1, td)).astype(out_k.dtype)
-
-    ct.store(out_k, index=(bid_b, bid_s, 0, 0, 0), tile=k_1)
-    ct.store(out_k, index=(bid_b, bid_s, 0, 1, 0), tile=k_2)
+mae = np.abs(out - expected).mean()
+print(f"MAE: {mae}")
+ic(out[0, 0, :3, :3])
+ic(expected[0, 0, :3, :3])
