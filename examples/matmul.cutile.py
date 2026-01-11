@@ -72,6 +72,7 @@ def batch_matmul_kernel(A, B, C, tm: ConstInt, tn: ConstInt, tk: ConstInt):
 import numpy as np
 from cutile_typeviz.transpiler import launch_numpy
 from pathlib import Path
+from icecream import ic
 
 a = np.random.randn(BATCH_DIM, M_DIM, K_DIM).astype(np.float32)
 b = np.random.randn(BATCH_DIM, K_DIM, N_DIM).astype(np.float32)
@@ -94,3 +95,5 @@ expected = np.matmul(a, b)
 
 mae = np.abs(expected - c).mean()
 print(f"MAE: {mae}")
+ic(expected[0, :3, :3])
+ic(c[0, :3, :3])

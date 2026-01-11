@@ -65,15 +65,12 @@ def flash_sdpa(
     t_c = ct.cdiv(k.shape[1], bc)
     for j in range(t_c):  # type: ignore
         # load (k_j)^T and v_j
-        k_jt = (
-            ct.load(
-                k,
-                index=(bid_b, j, bid_hkv, 0),
-                shape=(1, bc, 1, d),
-            )
-            .reshape((bc, d))
-            .transpose()
-        )
+        k_jt = ct.load(
+            k,
+            index=(bid_b, 0, bid_hkv, j),
+            shape=(1, d, 1, bc),
+            order=(0, 3, 2, 1),
+        ).reshape((d, bc))
 
         v_j = ct.load(
             v,
@@ -132,8 +129,6 @@ launch_numpy(
     tmp_dir=tmp_dir,
 )
 
-
-# TODO
 
 q_torch = torch.from_numpy(q).permute(0, 2, 1, 3)  # (b, h, s, d)
 k_torch = torch.from_numpy(k).permute(0, 2, 1, 3)  # (b, h_kv, s_kv, d)

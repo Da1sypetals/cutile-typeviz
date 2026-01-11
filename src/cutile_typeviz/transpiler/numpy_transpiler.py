@@ -262,7 +262,7 @@ class NumpyTranspiler:
             slice_parts[order_index] = f"{idx}[{i}] * {s} : {idx}[{i}] * {s} + {s}"
 
         slice_str = ", ".join(slice_parts)
-        self.emit(f"{res} = {arr}[{slice_str}]")
+        self.emit(f"{res} = ({arr}[{slice_str}]).transpose({order})")
 
     def handle_tile_store(self, op):
         arr = self.get_operand(op, "array")
@@ -287,11 +287,10 @@ class NumpyTranspiler:
         slice_parts = [None for _ in range(ndim)]
         for i, s in enumerate(shape):
             order_index = order[i]
-            logger.info(f"{order_index = }")
             slice_parts[order_index] = f"{idx}[{i}] * {s} : {idx}[{i}] * {s} + {s}"
 
         slice_str = ", ".join(slice_parts)
-        self.emit(f"{arr}[{slice_str}] = {tile}")
+        self.emit(f"{arr}[{slice_str}] = {tile}.transpose({order})")
 
     def handle_assign(self, op):
         res = self.get_result_var(op)
