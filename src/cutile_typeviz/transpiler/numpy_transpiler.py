@@ -110,18 +110,6 @@ class NumpyTranspiler:
         self.emit("grid_x, grid_y, grid_z = grid")
         self.emit("")
 
-        # bid_axes = [0, 1, 2]
-        # for axis in sorted(bid_axes):
-        #     loop_var = f"block_{axis}"
-        #     self.block_vars[axis] = loop_var
-        #     if axis == 0:
-        #         self.emit(f"for {loop_var} in range(grid_x):")
-        #     elif axis == 1:
-        #         self.emit(f"for {loop_var} in range(grid_y):")
-        #     elif axis == 2:
-        #         self.emit(f"for {loop_var} in range(grid_z):")
-        #     self.indent_level += 1
-
         self.emit(
             " ".join(
                 [
@@ -186,6 +174,20 @@ class NumpyTranspiler:
         # Operands are always Vars in this IR (SSA).
         # Constants are created via typed_const.
         return self.get_operand(op, name)
+
+    # --- Debug utils ---
+    def handle_tile_printf(self, op):
+        self.emit("# ignored tile_printf")
+
+    def handle_assert(self, op):
+        cond = self.get_operand(op, "cond")
+        message = op["attributes"].get("message", "")
+
+        # cond is a Tile (array), need to use .all() to check all elements
+        if message:
+            self.emit(f'assert {cond}.all(), "{message}"')
+        else:
+            self.emit(f"assert {cond}.all()")
 
     # --- Global array attributes Handlers ---
     # Note: array.ndim is static

@@ -188,6 +188,34 @@ def test_bitcast_op(
     ct.store(out, index=(bid,), tile=y)
 
 
+@ct.kernel
+def test_assert_op(
+    x_in: ct.Array,  # [TensorSize] float32 (positive values)
+    out: ct.Array,  # [TensorSize] float32
+):
+    """
+    Test assert_ operation.
+
+    <typecheck>
+    MockTensor((TensorSize,), dtype="float32")
+    MockTensor((TensorSize,), dtype="float32")
+    </typecheck>
+    """
+    bid = ct.bid(0)
+
+    # Load input (must be positive for assert test)
+    x = ct.load(x_in, index=(bid,), shape=(TileSize,))
+
+    # Test assert without message - all elements should be > 0
+    ct.assert_(x > 0.0)
+
+    # Test assert with message
+    ct.assert_(x < 100.0, "All elements should be less than 100")
+
+    # Output the input (if asserts pass)
+    ct.store(out, index=(bid,), tile=x)
+
+
 # cutile-typeviz: end
 
 from cutile_typeviz.transpiler import launch_numpy
@@ -415,6 +443,37 @@ def run_test_bitcast():
     print("bitcast test PASSED!")
 
 
+def run_test_assert():
+    """Test assert_ operation."""
+    print("\n=== Testing assert_ ===")
+    print(f"  Tensor size: {TensorSize}, Tile size: {TileSize}")
+
+    # Create positive float32 array (must satisfy x > 0 and x < 100)
+    x_in = np.random.uniform(low=0.1, high=50.0, size=(TensorSize,)).astype(np.float32)
+    out = np.zeros((TensorSize,), dtype=np.float32)
+
+    tmp_dir = Path("ir_artifacts") / "test_assert"
+
+    num_blocks = TensorSize // TileSize
+
+    launch_numpy(
+        test_assert_op,
+        [x_in, out],
+        grid=(num_blocks, 1, 1),
+        tmp_dir=tmp_dir,
+    )
+
+    # Verify output equals input (asserts should pass)
+    mae = np.abs(out - x_in).mean()
+
+    print(f"assert_ MAE: {mae}")
+    print(f"  Input[:5]:  {x_in[:5]}")
+    print(f"  Output[:5]: {out[:5]}")
+
+    assert mae < 1e-6, f"assert test failed! MAE={mae}"
+    print("assert_ test PASSED!")
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("Testing Transpiler Operations")
@@ -429,6 +488,7 @@ if __name__ == "__main__":
     run_test_arange()  # arange
     run_test_scan()  # cumsum/cumprod
     run_test_bitcast()  # bitcast
+    run_test_assert()  # assert_
 
     print("\n" + "=" * 60)
     print("All tests PASSED!")
