@@ -8,6 +8,28 @@ logger = get_logger(__name__)
 # FATAL: EVERY unimplemented or unsupported feature should raise an error.
 # DO NOT silently ignore or skip of fallback for unsupported features.
 
+DTYPE_MAP = {
+    "bool": "np.bool_",
+    "uint8": "np.uint8",
+    "uint16": "np.uint16",
+    "uint32": "np.uint32",
+    "uint64": "np.uint64",
+    "int8": "np.int8",
+    "int16": "np.int16",
+    "int32": "np.int32",
+    "int64": "np.int64",
+    "float32": "np.float32",
+    "float64": "np.float64",
+    "float16": "np.float16",
+}
+
+
+def str_to_dtype(dtype_str: str):
+    if dtype_str in DTYPE_MAP:
+        return DTYPE_MAP[dtype_str]
+    else:
+        raise ValueError(f"Unknown dtype: {dtype_str}")
+
 
 class NumpyTranspiler:
     def __init__(self, json_data: dict):
@@ -141,7 +163,8 @@ class NumpyTranspiler:
         if hasattr(self, method_name):
             getattr(self, method_name)(op)
         else:
-            raise TypeError(f"Unexpected optype {op_type}:\n{json.dumps(op, indent=2)}")
+            op_json = json.dumps(op, indent=2)
+            raise TypeError(f"Unexpected optype <{op_type}>:\n{op_json}")
 
     def get_result_var(self, op):
         if op["result_vars"]:
@@ -214,12 +237,8 @@ class NumpyTranspiler:
                 dtype_match = re.search(r"Tile\[([^,]+),", type_str)
                 dtype_str = dtype_match.group(1) if dtype_match else "float32"
 
-                # Map Cutile dtype to numpy dtype
-                np_dtype = "np.float32"
-                if "float" in dtype_str:
-                    np_dtype = f"np.{dtype_str}"
-                elif "int" in dtype_str:
-                    np_dtype = f"np.{dtype_str}"
+                # Map Cutile dtype to numpy dtype using str_to_dtype
+                np_dtype = str_to_dtype(dtype_str)
 
                 # Generate array filled with constant value
                 self.emit(f"{res} = np.full(({shape_str}), {val}, dtype={np_dtype})")
@@ -318,7 +337,11 @@ class NumpyTranspiler:
 
             if is_scalar:
                 # Scalar needs to be converted to array first
-                self.emit(f"{res} = np.full(({shape_str}), {x}, dtype=np.float32)")
+                # Parse dtype from result type
+                dtype_match = re.search(r"Tile\[([^,]+),", res_type_str)
+                dtype_str = dtype_match.group(1) if dtype_match else "float32"
+                np_dtype = str_to_dtype(dtype_str)
+                self.emit(f"{res} = np.full(({shape_str}), {x}, dtype={np_dtype})")
             else:
                 self.emit(f"{res} = {x}.reshape({shape_str})")
 
@@ -483,7 +506,7 @@ class NumpyTranspiler:
         x = self.get_operand(op, "x")
         fn = op["attributes"]["fn"]
         axis = op["attributes"]["axis"]
-        keepdims = op["attributes"].get("keepdims", False)
+        keepdims = op["attributes"]["keepdims"]
 
         match fn:
             case "argmax":
@@ -520,18 +543,10 @@ class NumpyTranspiler:
         else:
             raise ValueError(f"Cannot parse size from tile_arange result type: {res_type_str}")
 
-        # Parse dtype
+        # Parse dtype using str_to_dtype
         dtype_match = re.search(r"Tile\[([^,]+),", res_type_str)
-        if dtype_match:
-            dtype_str = dtype_match.group(1)
-            if "float" in dtype_str:
-                np_dtype = f"np.{dtype_str}"
-            elif "int" in dtype_str:
-                np_dtype = f"np.{dtype_str}"
-            else:
-                np_dtype = "np.int32"  # Default
-        else:
-            np_dtype = "np.int32"
+        dtype_str = dtype_match.group(1) if dtype_match else "int32"
+        np_dtype = str_to_dtype(dtype_str)
 
         self.emit(f"{res} = np.arange({size}, dtype={np_dtype})")
 
@@ -540,7 +555,7 @@ class NumpyTranspiler:
         x = self.get_operand(op, "x")
         fn = op["attributes"]["fn"]
         axis = op["attributes"]["axis"]
-        reverse = op["attributes"].get("reverse", False)
+        reverse = op["attributes"]["reverse"]
 
         match fn:
             case "add":
@@ -568,15 +583,8 @@ class NumpyTranspiler:
         else:
             raise ValueError(f"Cannot parse dtype from tile_bitcast result type: {res_type_str}")
 
-        # Map dtype to numpy dtype
-        if "float" in dtype_str:
-            np_dtype = f"np.{dtype_str}"
-        elif "int" in dtype_str:
-            np_dtype = f"np.{dtype_str}"
-        elif "uint" in dtype_str:
-            np_dtype = f"np.{dtype_str}"
-        else:
-            raise ValueError(f"Unsupported bitcast dtype: {dtype_str}")
+        # Map dtype to numpy dtype using str_to_dtype
+        np_dtype = str_to_dtype(dtype_str)
 
         # bitcast uses .view() to reinterpret the bytes
         self.emit(f"{res} = {x}.view({np_dtype})")
@@ -615,7 +623,7 @@ class NumpyTranspiler:
         x = self.get_operand(op, "x")
         idx = self.get_operand(op, "index")  # Tuple of offsets
 
-        shape = op.get("attributes", {}).get("shape", [])
+        shape = op["attributes"]["shape"]
 
         slice_parts = []
         for i, s in enumerate(shape):
@@ -758,18 +766,20 @@ class NumpyTranspiler:
         res = self.get_result_var(op)
         x = self.get_operand(op, "x")
 
-        dtype_attr = op["attributes"]["dtype"]
-        dtype_str = str(dtype_attr)
+        # Get target dtype from result type, not from attributes
+        # Result type format: "Tile[int32,()]" or "bool_"
+        res_type_str = op["result_vars"][0]["type"]["str"]
 
-        # Clean up dtype str (e.g. "float32" -> "np.float32")
-        if "float" in dtype_str:
-            np_dtype = f"np.{dtype_str}"
-        elif "int" in dtype_str:
-            np_dtype = f"np.{dtype_str}"
-        elif "bool" in dtype_str:
-            np_dtype = f"np.{dtype_str}"
+        # Try to parse dtype from Tile type
+        dtype_match = re.search(r"Tile\[([^,]+),", res_type_str)
+        if dtype_match:
+            dtype_str = dtype_match.group(1)
         else:
-            raise ValueError(f"Unsupported dtype: {dtype_str}")
+            # Handle scalar types like "bool_", "int32", etc.
+            dtype_str = res_type_str.rstrip("_")
+
+        # Map dtype to numpy dtype using str_to_dtype
+        np_dtype = str_to_dtype(dtype_str)
 
         self.emit(f"{res} = np.array({x}).astype({np_dtype})")
 
