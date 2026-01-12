@@ -37,6 +37,7 @@ class NumpyTranspiler:
             assert "." not in clean_name
             clean_name = clean_name.replace("$", "_")
         else:
+            # EXPLICITLY drops version identifiers
             clean_name = clean_name.split(".")[0]
 
         return clean_name
@@ -140,7 +141,7 @@ class NumpyTranspiler:
         if hasattr(self, method_name):
             getattr(self, method_name)(op)
         else:
-            raise TypeError(f"Unhandled {op_type}: {op}")
+            raise TypeError(f"Unexpected optype {op_type}:\n{json.dumps(op, indent=2)}")
 
     def get_result_var(self, op):
         if op["result_vars"]:
@@ -235,7 +236,11 @@ class NumpyTranspiler:
         res = self.get_result_var(op)
         items = self.get_operand(op, "items")
         # items is a list of var names
-        self.emit(f"{res} = ({', '.join(items)})")
+        # For single-element tuple, need trailing comma to make it a tuple
+        if len(items) == 1:
+            self.emit(f"{res} = ({items[0]},)")
+        else:
+            self.emit(f"{res} = ({', '.join(items)})")
 
     def handle_tile_load(self, op):
         res = self.get_result_var(op)
@@ -373,13 +378,13 @@ class NumpyTranspiler:
             case "sqrt":
                 np_fn = "np.sqrt"
             case "rsqrt":
-                np_fn = "np.rsqrt"
+                # NumPy doesn't have rsqrt, use 1/sqrt instead
+                self.emit(f"{res} = 1.0 / np.sqrt({operand})")
+                return
             case "floor":
                 np_fn = "np.floor"
             case "ceil":
                 np_fn = "np.ceil"
-            case "rsqrt":
-                np_fn = "np.rsqrt"
             case "invert":
                 np_fn = "~"
             case _:
@@ -438,6 +443,20 @@ class NumpyTranspiler:
             case _:
                 raise TypeError(f"Unknown binary op: {fn}")
 
+    def handle_raw_bitwise_shift(self, op):
+        res = self.get_result_var(op)
+        lhs = self.get_operand(op, "lhs")
+        rhs = self.get_operand(op, "rhs")
+        fn = op["attributes"]["fn"]
+
+        match fn:
+            case "lshift":
+                self.emit(f"{res} = {lhs} << {rhs}")
+            case "rshift":
+                self.emit(f"{res} = {lhs} >> {rhs}")
+            case _:
+                raise TypeError(f"Unknown bitwise shift op: {fn}")
+
     def handle_tile_reduce(self, op):
         res = self.get_result_var(op)
         x = self.get_operand(op, "x")
@@ -454,14 +473,30 @@ class NumpyTranspiler:
                 np_fn = "np.max"
             case "min":
                 np_fn = "np.min"
+            case _:
+                raise TypeError(f"Unknown reduce op: {fn}")
+
+        self.emit(f"{res} = {np_fn}({x}, axis={axis}, keepdims={keepdims})")
+
+    def handle_tile_arg_reduce(self, op):
+        res = self.get_result_var(op)
+        x = self.get_operand(op, "x")
+        fn = op["attributes"]["fn"]
+        axis = op["attributes"]["axis"]
+        keepdims = op["attributes"].get("keepdims", False)
+
+        match fn:
             case "argmax":
                 np_fn = "np.argmax"
             case "argmin":
                 np_fn = "np.argmin"
             case _:
-                raise TypeError(f"Unknown reduce op: {fn}")
+                raise TypeError(f"Unknown arg reduce op: {fn}")
 
-        self.emit(f"{res} = {np_fn}({x}, axis={axis}, keepdims={keepdims})")
+        if keepdims:
+            self.emit(f"{res} = np.expand_dims({np_fn}({x}, axis={axis}), axis={axis})")
+        else:
+            self.emit(f"{res} = {np_fn}({x}, axis={axis})")
 
     def handle_tile_mma(self, op):
         res = self.get_result_var(op)
@@ -471,6 +506,80 @@ class NumpyTranspiler:
 
         # MMA: D = A * B + C
         self.emit(f"{res} = np.matmul({x}, {y}) + {acc}")
+
+    def handle_tile_arange(self, op):
+        res = self.get_result_var(op)
+
+        # Get size and dtype from result type: "Tile[int32,(32)]"
+        res_type_str = op["result_vars"][0]["type"]["str"]
+
+        # Parse size from shape
+        shape_match = re.search(r"\((\d+)\)", res_type_str)
+        if shape_match:
+            size = int(shape_match.group(1))
+        else:
+            raise ValueError(f"Cannot parse size from tile_arange result type: {res_type_str}")
+
+        # Parse dtype
+        dtype_match = re.search(r"Tile\[([^,]+),", res_type_str)
+        if dtype_match:
+            dtype_str = dtype_match.group(1)
+            if "float" in dtype_str:
+                np_dtype = f"np.{dtype_str}"
+            elif "int" in dtype_str:
+                np_dtype = f"np.{dtype_str}"
+            else:
+                np_dtype = "np.int32"  # Default
+        else:
+            np_dtype = "np.int32"
+
+        self.emit(f"{res} = np.arange({size}, dtype={np_dtype})")
+
+    def handle_tile_scan(self, op):
+        res = self.get_result_var(op)
+        x = self.get_operand(op, "x")
+        fn = op["attributes"]["fn"]
+        axis = op["attributes"]["axis"]
+        reverse = op["attributes"].get("reverse", False)
+
+        match fn:
+            case "add":
+                np_fn = "np.cumsum"
+            case "mul":
+                np_fn = "np.cumprod"
+            case _:
+                raise TypeError(f"Unknown scan op: {fn}")
+
+        if reverse:
+            # For reverse scan: flip, scan, flip back
+            self.emit(f"{res} = np.flip({np_fn}(np.flip({x}, axis={axis}), axis={axis}), axis={axis})")
+        else:
+            self.emit(f"{res} = {np_fn}({x}, axis={axis})")
+
+    def handle_tile_bitcast(self, op):
+        res = self.get_result_var(op)
+        x = self.get_operand(op, "x")
+
+        # Get dtype from result type: "Tile[int32,(32)]"
+        res_type_str = op["result_vars"][0]["type"]["str"]
+        dtype_match = re.search(r"Tile\[([^,]+),", res_type_str)
+        if dtype_match:
+            dtype_str = dtype_match.group(1)
+        else:
+            raise ValueError(f"Cannot parse dtype from tile_bitcast result type: {res_type_str}")
+
+        # Map dtype to numpy dtype
+        if "float" in dtype_str:
+            np_dtype = f"np.{dtype_str}"
+        elif "int" in dtype_str:
+            np_dtype = f"np.{dtype_str}"
+        elif "uint" in dtype_str:
+            np_dtype = f"np.{dtype_str}"
+        else:
+            raise ValueError(f"Unsupported bitcast dtype: {dtype_str}")
+
+        # bitcast uses .view() to reinterpret the bytes
+        self.emit(f"{res} = {x}.view({np_dtype})")
 
     def handle_raw_where(self, op):
         res = self.get_result_var(op)
@@ -649,19 +758,18 @@ class NumpyTranspiler:
         res = self.get_result_var(op)
         x = self.get_operand(op, "x")
 
-        dtype_attr = op["attributes"].get("dtype")
-        if isinstance(dtype_attr, dict):
-            dtype_str = dtype_attr.get("str", "float32")  # fallback
-        else:
-            dtype_str = str(dtype_attr)
+        dtype_attr = op["attributes"]["dtype"]
+        dtype_str = str(dtype_attr)
 
         # Clean up dtype str (e.g. "float32" -> "np.float32")
         if "float" in dtype_str:
             np_dtype = f"np.{dtype_str}"
         elif "int" in dtype_str:
             np_dtype = f"np.{dtype_str}"
+        elif "bool" in dtype_str:
+            np_dtype = f"np.{dtype_str}"
         else:
-            np_dtype = "np.float32"  # Fallback
+            raise ValueError(f"Unsupported dtype: {dtype_str}")
 
         self.emit(f"{res} = np.array({x}).astype({np_dtype})")
 

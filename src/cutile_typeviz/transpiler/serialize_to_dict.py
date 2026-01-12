@@ -1,8 +1,3 @@
-"""
-Convert FunctionIR to JSON format for debugging.
-"""
-
-import json
 from typing import Any
 from cuda.tile._ir import ir
 from cuda.tile._ir.type import Type
@@ -121,7 +116,7 @@ def _serialize_loc(loc) -> dict[str, Any] | None:
             "line": loc.lineno if hasattr(loc, "lineno") else None,
             "column": loc.col_offset if hasattr(loc, "col_offset") else None,
         }
-    except:
+    except Exception:
         return {"unknown": True}
 
 
@@ -135,10 +130,3 @@ def _serialize_constant(value: Any) -> Any:
         return [_serialize_constant(v) for v in value]
     else:
         return str(value)
-
-
-def _json_default(obj: Any) -> Any:
-    """Default JSON serializer for objects that aren't natively JSON serializable."""
-    if hasattr(obj, "__dict__"):
-        return str(obj)
-    return str(obj)
