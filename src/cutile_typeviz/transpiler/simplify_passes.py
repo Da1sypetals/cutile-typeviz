@@ -1,5 +1,5 @@
 """
-Pass to eliminate tokens from the IR, converting token-ordered operations to plain operations.
+Passes to apply before transpiling to numpy
 """
 
 from cuda.tile._ir import ir

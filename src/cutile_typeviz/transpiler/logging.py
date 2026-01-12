@@ -5,8 +5,6 @@ from typing import Optional
 
 
 class ColoredFormatter(logging.Formatter):
-    """Custom formatter that adds colors to log levels and includes timestamp and module info."""
-
     # ANSI color codes
     COLORS = {
         "DEBUG": "\033[36m",  # Cyan
