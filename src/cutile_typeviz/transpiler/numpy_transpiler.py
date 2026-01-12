@@ -38,9 +38,6 @@ class NumpyTranspiler:
         self.indent_level = 0
         self.var_map = {}  # Map IR var names to Python var names
         self.imports = set(["import numpy as np", "import itertools"])
-        self.constants = {
-            "inf": "np.inf",
-        }
         self.loop_stack = []  # Stack of {carried_names: [], result_names: []}
         self.block_vars = {}  # Map axis to block variable name
         self.grid_dims = (0, 0, 0)  # Will be set from grid parameter
@@ -71,10 +68,6 @@ class NumpyTranspiler:
         # Add imports
         for imp in sorted(list(self.imports)):
             self.emit(imp)
-        self.emit("")
-
-        for constant in sorted(list(self.constants)):
-            self.emit(f"{constant} = {self.constants[constant]}")
         self.emit("")
 
         # Generate internal tile function (without block loops)
@@ -596,7 +589,6 @@ class NumpyTranspiler:
         cond = self.get_operand(op, "cond")
         x = self.get_operand(op, "x")
         y = self.get_operand(op, "y")
-        print(f"{y = }")
 
         self.emit(f"{res} = np.where({cond}, {x}, {y})")
 
@@ -847,6 +839,16 @@ class NumpyTranspiler:
                 raise ValueError(f"break vars count mismatch {len(output_vars)} vs {len(result_names)}")
 
         self.emit("break")
+
+    def handle_num_tiles(self, op):
+        res = self.get_result_var(op)
+        arr = self.get_operand(op, "array")
+        axis = op["attributes"]["axis"]
+        tile_shape: list[int] = op["attributes"]["shape"]  # Tile shape
+
+        # num_tiles = ceil(array.shape[axis] / tile_shape[axis])
+        tile_size = tile_shape[axis]
+        self.emit(f"{res} = ({arr}.shape[{axis}] + {tile_size} - 1) // {tile_size}")
 
     def handle_return(self, op):
         val = self.get_operand(op, "value")
