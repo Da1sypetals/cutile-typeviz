@@ -60,7 +60,9 @@ def matvec_A(R, x):
 
 @ct.function(host=False, tile=True)
 def dot(a, b):  # a/b: (..., dim, 1)
-    return ct.matmul(a.transpose(-2, -1), b)
+    a = a.astype(ct.float16)
+    b = b.astype(ct.float16)
+    return ct.matmul(a.transpose(-2, -1), b).astype(ct.float32)
 
 
 @ct.kernel
@@ -346,6 +348,7 @@ launch_numpy(
     sinkhorn_knopp_bwd_implicit_cg,
     [out, dout, res],
     grid=(1, batch // 32, 1),
+    tmp_dir=bwd_dir,
 )
 grad_M_implicit = torch.from_numpy(res).squeeze(0)
 
