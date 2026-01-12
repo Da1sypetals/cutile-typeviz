@@ -73,8 +73,17 @@ class NumpyTranspiler:
         # Generate internal tile function (without block loops)
         self.tile_func_name = f"{func_name}_tile"
         param_names = [self.get_var_name(p["name"]) for p in params]
-        # Internal tile function takes block indices as parameters instead of grid
-        tile_param_str = ", ".join(param_names + ["block_0: int", "block_1: int", "block_2: int"])
+
+        # Internal tile function takes block indices and grid dimensions as parameters
+        grid_params = [
+            "block_0: int",
+            "block_1: int",
+            "block_2: int",
+            "grid_x: int",
+            "grid_y: int",
+            "grid_z: int",
+        ]
+        tile_param_str = ", ".join(param_names + grid_params)
         self.emit(f"def {self.tile_func_name}({tile_param_str}):")
         self.indent_level += 1
 
@@ -119,6 +128,9 @@ class NumpyTranspiler:
         tile_args.append("block_0=block_0")
         tile_args.append("block_1=block_1")
         tile_args.append("block_2=block_2")
+        tile_args.append("grid_x=grid_x")
+        tile_args.append("grid_y=grid_y")
+        tile_args.append("grid_z=grid_z")
 
         self.indent_level += 1
         self.emit(f"{self.tile_func_name}({', '.join(tile_args)})")
@@ -213,6 +225,15 @@ class NumpyTranspiler:
         # Map to block parameter
         block_var_name = f"block_{axis}"
         self.emit(f"{res} = {block_var_name}")
+
+    def handle_tile_num_blocks(self, op):
+        res = self.get_result_var(op)
+        axis = op["attributes"]["axis"]
+        assert axis in (0, 1, 2), f"Invalid axis: {axis}, should be in (0, 1, 2)"
+        # Map to grid dimension parameter
+        grid_var_names = ["grid_x", "grid_y", "grid_z"]
+        grid_var_name = grid_var_names[axis]
+        self.emit(f"{res} = {grid_var_name}")
 
     def handle_typed_const(self, op):
         res = self.get_result_var(op)

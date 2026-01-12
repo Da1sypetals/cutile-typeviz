@@ -25,6 +25,7 @@ def run_all_tests():
         ("test_softmax", "Softmax"),
         ("test_rmsnorm", "RMSNorm"),
         ("test_matmul", "Matrix Multiplication"),
+        ("test_num_blocks", "Num Blocks"),
     ]
 
     results = {}

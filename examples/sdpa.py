@@ -13,6 +13,8 @@ HeadKV = 4
 Dim = 128
 Groups = Head // HeadKV
 
+INF = 1e12
+
 
 @ct.kernel
 def flash_sdpa(
@@ -52,7 +54,7 @@ def flash_sdpa(
 
     # initialize buffers
     l_i = ct.zeros((br, 1), dtype=ct.float32)
-    m_i = ct.full((br, 1), -float("inf"), dtype=ct.float32)
+    m_i = ct.full((br, 1), -INF, dtype=ct.float32)
     o_i = ct.zeros((br, d), dtype=ct.float32)
 
     # load q_i
