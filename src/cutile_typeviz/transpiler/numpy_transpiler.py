@@ -251,7 +251,10 @@ class NumpyTranspiler:
                 shape_str = shape_match.group(1)
                 # Parse dtype
                 dtype_match = re.search(r"Tile\[([^,]+),", type_str)
-                dtype_str = dtype_match.group(1) if dtype_match else "float32"
+                if dtype_match:
+                    dtype_str = dtype_match.group(1)
+                else:
+                    raise ValueError(f"Could not parse dtype from result type: {result_type['str']}")
 
                 # Map Cutile dtype to numpy dtype using str_to_dtype
                 np_dtype = str_to_dtype(dtype_str)
@@ -355,7 +358,10 @@ class NumpyTranspiler:
                 # Scalar needs to be converted to array first
                 # Parse dtype from result type
                 dtype_match = re.search(r"Tile\[([^,]+),", res_type_str)
-                dtype_str = dtype_match.group(1) if dtype_match else "float32"
+                if dtype_match:
+                    dtype_str = dtype_match.group(1)
+                else:
+                    raise ValueError(f"Could not parse dtype from result type: {res_type_str}")
                 np_dtype = str_to_dtype(dtype_str)
                 self.emit(f"{res} = np.full(({shape_str}), {x}, dtype={np_dtype})")
             else:
@@ -561,7 +567,10 @@ class NumpyTranspiler:
 
         # Parse dtype using str_to_dtype
         dtype_match = re.search(r"Tile\[([^,]+),", res_type_str)
-        dtype_str = dtype_match.group(1) if dtype_match else "int32"
+        if dtype_match:
+            dtype_str = dtype_match.group(1)
+        else:
+            raise ValueError(f"Cannot parse dtype from tile_arange result type: {res_type_str}")
         np_dtype = str_to_dtype(dtype_str)
 
         self.emit(f"{res} = np.arange({size}, dtype={np_dtype})")
