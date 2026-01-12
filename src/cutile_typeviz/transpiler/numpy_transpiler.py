@@ -31,6 +31,19 @@ def str_to_dtype(dtype_str: str):
         raise ValueError(f"Unknown dtype: {dtype_str}")
 
 
+def parse_slice(slice_str: str):
+    slice_str = slice_str.strip()
+    assert slice_str.startswith("slice(") and slice_str.endswith(")")
+    slice_str = slice_str[6:-1]
+
+    parts = [part.strip() for part in slice_str.split(",")]
+    start = int(parts[0]) if parts[0] != "None" else None
+    stop = int(parts[1]) if parts[1] != "None" else None
+    step = int(parts[2]) if parts[2] != "None" else None
+
+    return slice(start, stop, step)
+
+
 class NumpyTranspiler:
     def __init__(self, json_data: dict):
         self.json_data = json_data
@@ -215,6 +228,27 @@ class NumpyTranspiler:
         index: int = op["attributes"]["index"]
 
         self.emit(f"{res} = {x}[{index}]")
+
+    def handle_list_item(self, op):
+        res = self.get_result_var(op)
+        x = self.get_var_name(op["operands"]["x"]["name"])
+        # Note: different from tuple_item
+        index: int = op["operands"]["index"]
+
+        self.emit(f"{res} = {x}[{index}]")
+
+    def handle_tuple_slice(self, op):
+        res = self.get_result_var(op)
+        x = self.get_var_name(op["operands"]["x"]["name"])
+        slc: int = op["attributes"]["slc"]
+
+        self.emit(f"{res} = {x}[{slc}]")
+
+    def handle_list_len(self, op):
+        res = self.get_result_var(op)
+        x = self.get_var_name(op["operands"]["x"]["name"])
+
+        self.emit(f"{res} = len({x})")
 
     # --- Op Handlers ---
 
