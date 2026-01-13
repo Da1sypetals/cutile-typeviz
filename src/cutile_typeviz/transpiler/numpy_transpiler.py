@@ -1,7 +1,9 @@
 import json
 import re
 import numpy as np
+from typing import Iterable
 from cutile_typeviz.transpiler.logging import get_logger
+
 
 logger = get_logger(__name__)
 
@@ -29,6 +31,13 @@ def str_to_dtype(dtype_str: str):
         return f"np.{DTYPE_MAP[dtype_str].__name__}"
     else:
         raise ValueError(f"Unknown dtype: {dtype_str}")
+
+
+def join_tuple_elems(iterable: Iterable[str]) -> str:
+    """
+    Tuple allow trailing comma, so we make use of it.
+    """
+    return "".join(map(lambda x: str(x) + ",", iterable))
 
 
 def parse_slice(slice_str: str):
@@ -179,7 +188,7 @@ class NumpyTranspiler:
 
     def get_operand(self, op, name):
         if name not in op["operands"]:
-            return None
+            raise ValueError(f"Operand {name} not found in {op}")
         val = op["operands"][name]
         if isinstance(val, dict) and "name" in val:
             return self.get_var_name(val["name"])
@@ -275,34 +284,46 @@ class NumpyTranspiler:
 
         # Check if result is a Tile type
         result_type = op["result_vars"][0]["type"]
-        is_tile = result_type["type"] == "TileTy"
+        result_meta_ty = result_type["type"].strip()
 
-        if is_tile:
-            # Parse shape from type string: "Tile[float32,(32,8,1)]"
-            type_str = result_type["str"]
-            shape_match = re.search(r"\(([\d,]+)\)", type_str)
-            if shape_match:
-                shape_str = shape_match.group(1)
-                # Parse dtype
-                dtype_match = re.search(r"Tile\[([^,]+),", type_str)
-                if dtype_match:
-                    dtype_str = dtype_match.group(1)
+        match result_meta_ty:
+            case "NoneType":
+                self.emit(f"{res} = None")
+
+            case "TileTy":
+                # Parse shape from type string: "Tile[float32,(32,8,1)]"
+                type_str = result_type["str"]
+                shape_match = re.search(r"\(([\d,]+)\)", type_str)
+                if shape_match:
+                    shape_str = shape_match.group(1)
+                    # Parse dtype
+                    dtype_match = re.search(r"Tile\[([^,]+),", type_str)
+                    if dtype_match:
+                        dtype_str = dtype_match.group(1)
+                    else:
+                        raise ValueError(f"Could not parse dtype from result type: {result_type['str']}")
+
+                    # Map Cutile dtype to numpy dtype using str_to_dtype
+                    np_dtype = str_to_dtype(dtype_str)
+
+                    # Generate array filled with constant value
+                    self.emit(f"{res} = np.full(({shape_str}), {val}, dtype={np_dtype})")
                 else:
-                    raise ValueError(f"Could not parse dtype from result type: {result_type['str']}")
+                    raise ValueError(f"Could not parse shape from result type: {type_str}")
 
-                # Map Cutile dtype to numpy dtype using str_to_dtype
-                np_dtype = str_to_dtype(dtype_str)
+            case "TupleTy":
+                # logger.warning(f"TupleTy: \n{json.dumps(op, indent=2)}")
+                assert isinstance(val, list), f"TupleTy value must be list, got {type(val)}"
 
-                # Generate array filled with constant value
-                self.emit(f"{res} = np.full(({shape_str}), {val}, dtype={np_dtype})")
-            else:
-                self.emit(f"{res} = {val}")
-        elif isinstance(val, list):  # Tuple constant
-            val_str = f"({', '.join(map(str, val))})"
-            self.emit(f"{res} = {val_str}")
-        else:
-            val_str = str(val)
-            self.emit(f"{res} = {val_str}")
+                val_str = join_tuple_elems(str(x) for x in val)
+                self.emit(f"{res} = ({val_str})")
+
+            case "ArithmeticDType":
+                val_str = str(val)
+                self.emit(f"{res} = {val_str}")
+
+            case _:
+                raise ValueError(f"Unhandled typed_const with type: {result_meta_ty}")
 
     def handle_build_tuple(self, op):
         res = self.get_result_var(op)
@@ -312,7 +333,8 @@ class NumpyTranspiler:
         if len(items) == 1:
             self.emit(f"{res} = ({items[0]},)")
         else:
-            self.emit(f"{res} = ({', '.join(items)})")
+            items_code = join_tuple_elems(items)
+            self.emit(f"{res} = ({items_code})")
 
     def handle_tile_load(self, op):
         res = self.get_result_var(op)
@@ -338,6 +360,7 @@ class NumpyTranspiler:
             order_index = order[i]
             slice_parts[order_index] = f"{idx}[{i}] * {s} : {idx}[{i}] * {s} + {s}"
 
+        # Slice index, NOT tuple
         slice_str = ", ".join(slice_parts)
         self.emit(f"{res} = ({arr}[{slice_str}]).transpose({order})")
 
@@ -347,7 +370,7 @@ class NumpyTranspiler:
         tile = self.get_operand(op, "tile")
         order: list[int] = op["attributes"]["order"]
 
-        logger.info(f"{order = }")
+        # logger.info(f"{order = }")
 
         ndim = len(order)
 
@@ -679,7 +702,7 @@ class NumpyTranspiler:
     def handle_tile_extract(self, op):
         res = self.get_result_var(op)
         x = self.get_operand(op, "x")
-        idx = self.get_operand(op, "index")  # Tuple of offsets
+        idx = self.get_operand(op, "index")  # int or Tuple of offsets
 
         shape = op["attributes"]["shape"]
 
@@ -844,7 +867,7 @@ class NumpyTranspiler:
     def handle_tile_item(self, op):
         res = self.get_result_var(op)
         x = self.get_operand(op, "x")
-        self.emit(f"{res} = {x}")  # Pass through, or .item() if scalar needed
+        self.emit(f"{res} = {x}.item()")
 
     def handle_raw_cmp(self, op):
         res = self.get_result_var(op)
